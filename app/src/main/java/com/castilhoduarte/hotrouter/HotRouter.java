@@ -32,7 +32,7 @@ public final class HotRouter {
     // UI-facing status modes.
     public static final String OFF = "OFF";
     public static final String STARTING = "STARTING";
-    public static final String WLAN = "WLAN";
+    public static final String STARLINK = "STARLINK";
     public static final String FOURG = "4G";
     public static final String ERROR = "ERROR";
     /** Telnet unreachable: app installed without the exploit (uid too high). */
@@ -214,7 +214,7 @@ public final class HotRouter {
             } catch (NumberFormatException ignored) {
             }
         }
-        if (WLAN.equals(mode) || FOURG.equals(mode)) {
+        if (STARLINK.equals(mode) || FOURG.equals(mode)) {
             return new Status(mode, epoch);
         }
         // OFF in the file but pid alive => still coming up.

@@ -4,8 +4,8 @@
 
 A single-purpose, harmless Android app for **my own Haval head unit**. It does one
 thing: run the **HotRouter** daemon that bridges the car's Wi-Fi hotspot traffic out
-through an external WLAN (e.g. Starlink on `wlan0`) when reachable, falling back to the
-OEM 4G route (`vlan13`) otherwise.
+through the external Starlink uplink (`wlan0`) when reachable, falling back to the OEM 4G
+route (`vlan13`) otherwise.
 
 Extracted from the old `haval-app-tool-multimidia` project, keeping **only** the
 HotRouter feature. Everything else (Frida hooks, cluster projection, vehicle AIDL,
@@ -48,7 +48,7 @@ Boot ─▶ BootReceiver ─▶ BootService (foreground, directBootAware)
                               └──────────────▶ arm 60s watchdog (relaunch if pid dead)
 
 MainActivity ─▶ poll status every 3s via telnet (state file + pid liveness)
-            ─▶ big toggle button  /  route chip (WLAN·4G)  /  "Ver logs" button
+            ─▶ big toggle button  /  route chip (Starlink·4G)  /  "Ver logs" button
 LogActivity  ─▶ tail hotrouter.log via telnet
 ```
 
@@ -57,8 +57,8 @@ LogActivity  ─▶ tail hotrouter.log via telnet
 | File | Responsibility |
 |------|----------------|
 | `TelnetRoot.java` | Raw `java.net.Socket` to `127.0.0.1:23`. Minimal IAC handshake (refuse all DO/WILL). `exec(cmd)` sends `cmd; echo __HR_END__$?` and reads until the sentinel, stripping IAC + ANSI. Returns output + exit code. No library. |
-| `HotRouter.java` | Singleton on a background `HandlerThread`. `enableAndStart()`, `stop()`, `readStatus()` → `OFF/STARTING/WLAN/4G/ERROR`, `readLog(n)`, `isDaemonAlive()`. All shell work via `TelnetRoot`. Persists the toggle. Owns the watchdog. Mirrors old `HotRouterManager` logic. |
-| `hotrouter.sh` | **Reused verbatim** from the old app. Asset, base64-pushed to `/data/local/tmp/hotrouter.sh`. Daemon writes `hotrouter.state` (`WLAN`/`4G`/`OFF` + epoch), `hotrouter.pid`, `hotrouter.log`. |
+| `HotRouter.java` | Singleton on a background `HandlerThread`. `enableAndStart()`, `stop()`, `readStatus()` → `OFF/STARTING/STARLINK/4G/ERROR`, `readLog(n)`, `isDaemonAlive()`. All shell work via `TelnetRoot`. Persists the toggle. Owns the watchdog. Mirrors old `HotRouterManager` logic. |
+| `hotrouter.sh` | Self-sufficient routing daemon (hysteresis + self-managed NAT, independent of system tetherctrl chains; see "Routing guardrails" below). Asset, base64-pushed to `/data/local/tmp/hotrouter.sh`. Writes `hotrouter.state` (`STARLINK`/`4G`/`OFF` + epoch), `hotrouter.pid`, `hotrouter.log`. |
 | `BootService.java` | Foreground service, `directBootAware`. On start: if toggle ON, push+start daemon, arm watchdog. Keeps a quiet persistent notification. |
 | `BootReceiver.java` | `BOOT_COMPLETED` + `LOCKED_BOOT_COMPLETED` + `MY_PACKAGE_REPLACED` → start `BootService`. |
 | `MainActivity.java` | The one screen. Toggle writes the pref and calls the manager. Polls status every 3s. |
@@ -82,7 +82,7 @@ One landscape screen, dark, friendly, rounded card:
    │   (toque para desligar)│   green=ON · gray=OFF · amber=STARTING · red=ERROR
    └───────────────────────┘
 
-      ● Trafegando via WLAN (Starlink)    chip: green WLAN / blue 4G / dim "—"
+      ● Trafegando via Starlink           chip: green Starlink / blue 4G / dim "—"
 
             [   Ver logs   ]
 ```
@@ -131,6 +131,36 @@ Adapted from the old installer:
   script manages itself.
 - PR builds **debug** (no secrets required); signed release only on merge to `main`.
 - `applicationId = com.castilhoduarte.hotrouter`, display name **HotRouter**.
+
+## Routing guardrails (daemon)
+
+Field symptom that motivated this: on open road with **zero 4G**, Starlink routing failed;
+with even a weak 3G signal it worked. And CarPlay sometimes dropped on a network switch.
+
+**Root cause (hypothesis, confirmed by `DIAG` logs on the next drive):** the old daemon's
+NAT/forwarding rode on Android's `tetherctrl_*` iptables chains, which the system only
+populates while the hotspot has a **cellular upstream**. No cellular → those chains go
+away → `ensure_iptables` aborted → Starlink path dead, even though the satellite link was
+fine. The 5s `ip route flush cache` + single-sample switching also flapped the route and
+reset live connections (CarPlay).
+
+Fixes in `hotrouter.sh`:
+
+1. **Self-sufficient NAT/forward** (`ensure_iptables_self`): installs `POSTROUTING -o
+   wlan0 MASQUERADE` and `FORWARD wlan2↔wlan0 ACCEPT` directly, independent of
+   `tetherctrl_*`. These are additive ACCEPT/MASQUERADE only (never DROP), so they cannot
+   regress the working case. tetherctrl integration is now best-effort.
+2. **Hysteresis**: switch to Starlink only after `UP_THRESHOLD` (2) consecutive good
+   samples, fall back only after `DOWN_THRESHOLD` (4) consecutive failures. Routing is
+   re-applied (and the cache flushed) **only on a real transition**; steady state just
+   refreshes idempotent rules with no churn.
+3. **Diagnostics** (`dump_diag`): on every transition, dump `ip rule`, the Starlink and
+   main route tables, NAT/`FORWARD`/`tetherctrl_FORWARD` chains, and per-host ping to the
+   log — so an open-road failure can be diagnosed after the fact.
+
+Note: this routing rework is **not bench-testable** (needs the live car network). The
+self-managed rules are low-risk by construction; the diagnostics exist to confirm the
+root cause on the next drive.
 
 ## Out of scope
 

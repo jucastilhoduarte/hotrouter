@@ -5,8 +5,20 @@
 # Automatic router daemon for the multimedia hotspot.
 #
 # Goal:
-# - Prefer external WLAN (wlan0), e.g. Starlink, for hotspot clients.
-# - Fall back to OEM 4G route (vlan13) when WLAN is unavailable.
+# - Prefer the external Starlink uplink (wlan0) for hotspot clients.
+# - Fall back to the OEM 4G route (vlan13) when Starlink is unavailable.
+#
+# Design notes (see docs/DESIGN.md):
+# - The Starlink path is SELF-SUFFICIENT: it installs its own FORWARD/MASQUERADE rules
+#   and does NOT depend on the system tetherctrl_* chains existing. Earlier versions rode
+#   on tetherctrl_*, which Android only populates while a cellular upstream is alive — so
+#   Starlink silently broke whenever 4G dropped to zero. The tetherctrl rules are now a
+#   best-effort bonus, not a requirement.
+# - Switching is debounced (hysteresis) and routing is only re-applied on an actual
+#   transition, so brief Starlink ping blips no longer flap the route and reset live
+#   connections (which used to kill CarPlay mid-drive).
+# - On every transition it dumps a DIAG block (rules, routes, iptables, ping) so failures
+#   on the open road can be diagnosed after the fact.
 #
 # Usage:
 #   sh hotrouter.sh start   # run the routing loop (default)
@@ -18,16 +30,28 @@ LOG="$BASE/$NAME.log"
 PIDFILE="$BASE/$NAME.pid"
 STATEFILE="$BASE/$NAME.state"
 HOTSPOT_IF="wlan2"
-WLAN_IF="wlan0"
-WLAN_TABLE="wlan0"
+STARLINK_IF="wlan0"
+STARLINK_TABLE="wlan0"
 RULE_PRIO="17999"
 CHECK_HOSTS="8.8.8.8 1.1.1.1"
 INTERVAL_SEC=5
-MAX_LOG_LINES=400
+MAX_LOG_LINES=1200
+
+# Hysteresis: how many consecutive samples (INTERVAL_SEC apart) before switching.
+UP_THRESHOLD=2     # ~10s of good Starlink before diverting to it
+DOWN_THRESHOLD=4   # ~20s of bad Starlink before falling back to 4G
 HEARTBEAT_EVERY=24
 
 log() {
   echo "$(date '+%Y-%m-%d %H:%M:%S') [$1] $2" >> "$LOG"
+}
+
+# Prefix every line of stdin with a DIAG tag (for multi-line command output).
+logblock() {
+  _t="$1"
+  while IFS= read -r _l; do
+    log DIAG "$_t| $_l"
+  done
 }
 
 write_state() {
@@ -65,16 +89,47 @@ kill_old_hotrouters() {
   rm -f "$PIDFILE"
 }
 
+# ---- routing rule (divert hotspot ingress to the Starlink table) ----
+
 cleanup_duplicate_rules() {
-  while ip rule | grep -q "iif $HOTSPOT_IF lookup $WLAN_TABLE"; do
-    ip rule del from all iif "$HOTSPOT_IF" lookup "$WLAN_TABLE" priority "$RULE_PRIO" 2>/dev/null || break
+  while ip rule | grep -q "iif $HOTSPOT_IF lookup $STARLINK_TABLE"; do
+    ip rule del from all iif "$HOTSPOT_IF" lookup "$STARLINK_TABLE" priority "$RULE_PRIO" 2>/dev/null || break
   done
 }
 
+# Idempotent: add the diversion rule only if absent (no delete-then-add churn, which would
+# momentarily drop the rule on every steady-state pass).
 ensure_rule_once() {
-  cleanup_duplicate_rules
-  ip rule add from all iif "$HOTSPOT_IF" lookup "$WLAN_TABLE" priority "$RULE_PRIO" 2>/dev/null
+  ip rule | grep -q "iif $HOTSPOT_IF lookup $STARLINK_TABLE" && return 0
+  ip rule add from all iif "$HOTSPOT_IF" lookup "$STARLINK_TABLE" priority "$RULE_PRIO" 2>/dev/null
 }
+
+# ---- self-managed NAT/forward (independent of the system tetherctrl chains) ----
+
+ensure_iptables_self() {
+  iptables -t nat -C POSTROUTING -o "$STARLINK_IF" -j MASQUERADE 2>/dev/null || \
+    iptables -t nat -I POSTROUTING 1 -o "$STARLINK_IF" -j MASQUERADE
+
+  iptables -C FORWARD -i "$HOTSPOT_IF" -o "$STARLINK_IF" -j ACCEPT 2>/dev/null || \
+    iptables -I FORWARD 1 -i "$HOTSPOT_IF" -o "$STARLINK_IF" -j ACCEPT
+
+  iptables -C FORWARD -i "$STARLINK_IF" -o "$HOTSPOT_IF" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
+    iptables -I FORWARD 1 -i "$STARLINK_IF" -o "$HOTSPOT_IF" -m state --state RELATED,ESTABLISHED -j ACCEPT
+}
+
+teardown_iptables_self() {
+  while iptables -t nat -C POSTROUTING -o "$STARLINK_IF" -j MASQUERADE 2>/dev/null; do
+    iptables -t nat -D POSTROUTING -o "$STARLINK_IF" -j MASQUERADE 2>/dev/null || break
+  done
+  while iptables -C FORWARD -i "$HOTSPOT_IF" -o "$STARLINK_IF" -j ACCEPT 2>/dev/null; do
+    iptables -D FORWARD -i "$HOTSPOT_IF" -o "$STARLINK_IF" -j ACCEPT 2>/dev/null || break
+  done
+  while iptables -C FORWARD -i "$STARLINK_IF" -o "$HOTSPOT_IF" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null; do
+    iptables -D FORWARD -i "$STARLINK_IF" -o "$HOTSPOT_IF" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || break
+  done
+}
+
+# ---- best-effort integration with the system tetherctrl chains (bonus, not required) ----
 
 chain_exists() {
   iptables -nL "$1" >/dev/null 2>&1
@@ -84,92 +139,110 @@ nat_chain_exists() {
   iptables -t nat -nL "$1" >/dev/null 2>&1
 }
 
-ensure_iptables() {
-  nat_chain_exists tetherctrl_nat_POSTROUTING || {
-    log ERROR "Missing NAT chain tetherctrl_nat_POSTROUTING"
-    return 1
-  }
+ensure_iptables_tetherctrl() {
+  nat_chain_exists tetherctrl_nat_POSTROUTING || return 1
+  chain_exists tetherctrl_FORWARD || return 1
+  chain_exists tetherctrl_counters || return 1
 
-  chain_exists tetherctrl_FORWARD || {
-    log ERROR "Missing chain tetherctrl_FORWARD"
-    return 1
-  }
+  iptables -t nat -C tetherctrl_nat_POSTROUTING -o "$STARLINK_IF" -j MASQUERADE 2>/dev/null || \
+  iptables -t nat -I tetherctrl_nat_POSTROUTING 1 -o "$STARLINK_IF" -j MASQUERADE
 
-  chain_exists tetherctrl_counters || {
-    log ERROR "Missing chain tetherctrl_counters"
-    return 1
-  }
+  iptables -C tetherctrl_FORWARD -i "$STARLINK_IF" -o "$HOTSPOT_IF" -m state --state RELATED,ESTABLISHED -g tetherctrl_counters 2>/dev/null || \
+  iptables -I tetherctrl_FORWARD 1 -i "$STARLINK_IF" -o "$HOTSPOT_IF" -m state --state RELATED,ESTABLISHED -g tetherctrl_counters
 
-  iptables -t nat -C tetherctrl_nat_POSTROUTING -o "$WLAN_IF" -j MASQUERADE 2>/dev/null || \
-  iptables -t nat -I tetherctrl_nat_POSTROUTING 1 -o "$WLAN_IF" -j MASQUERADE
+  iptables -C tetherctrl_FORWARD -i "$HOTSPOT_IF" -o "$STARLINK_IF" -m state --state INVALID -j DROP 2>/dev/null || \
+  iptables -I tetherctrl_FORWARD 2 -i "$HOTSPOT_IF" -o "$STARLINK_IF" -m state --state INVALID -j DROP
 
-  iptables -C tetherctrl_FORWARD -i "$WLAN_IF" -o "$HOTSPOT_IF" -m state --state RELATED,ESTABLISHED -g tetherctrl_counters 2>/dev/null || \
-  iptables -I tetherctrl_FORWARD 1 -i "$WLAN_IF" -o "$HOTSPOT_IF" -m state --state RELATED,ESTABLISHED -g tetherctrl_counters
+  iptables -C tetherctrl_FORWARD -i "$HOTSPOT_IF" -o "$STARLINK_IF" -g tetherctrl_counters 2>/dev/null || \
+  iptables -I tetherctrl_FORWARD 3 -i "$HOTSPOT_IF" -o "$STARLINK_IF" -g tetherctrl_counters
 
-  iptables -C tetherctrl_FORWARD -i "$HOTSPOT_IF" -o "$WLAN_IF" -m state --state INVALID -j DROP 2>/dev/null || \
-  iptables -I tetherctrl_FORWARD 2 -i "$HOTSPOT_IF" -o "$WLAN_IF" -m state --state INVALID -j DROP
+  iptables -C tetherctrl_counters -i "$HOTSPOT_IF" -o "$STARLINK_IF" -j RETURN 2>/dev/null || \
+  iptables -I tetherctrl_counters 1 -i "$HOTSPOT_IF" -o "$STARLINK_IF" -j RETURN
 
-  iptables -C tetherctrl_FORWARD -i "$HOTSPOT_IF" -o "$WLAN_IF" -g tetherctrl_counters 2>/dev/null || \
-  iptables -I tetherctrl_FORWARD 3 -i "$HOTSPOT_IF" -o "$WLAN_IF" -g tetherctrl_counters
-
-  iptables -C tetherctrl_counters -i "$HOTSPOT_IF" -o "$WLAN_IF" -j RETURN 2>/dev/null || \
-  iptables -I tetherctrl_counters 1 -i "$HOTSPOT_IF" -o "$WLAN_IF" -j RETURN
-
-  iptables -C tetherctrl_counters -i "$WLAN_IF" -o "$HOTSPOT_IF" -j RETURN 2>/dev/null || \
-  iptables -I tetherctrl_counters 2 -i "$WLAN_IF" -o "$HOTSPOT_IF" -j RETURN
+  iptables -C tetherctrl_counters -i "$STARLINK_IF" -o "$HOTSPOT_IF" -j RETURN 2>/dev/null || \
+  iptables -I tetherctrl_counters 2 -i "$STARLINK_IF" -o "$HOTSPOT_IF" -j RETURN
 
   return 0
 }
 
-teardown_iptables() {
-  while iptables -t nat -C tetherctrl_nat_POSTROUTING -o "$WLAN_IF" -j MASQUERADE 2>/dev/null; do
-    iptables -t nat -D tetherctrl_nat_POSTROUTING -o "$WLAN_IF" -j MASQUERADE 2>/dev/null || break
+teardown_iptables_tetherctrl() {
+  while iptables -t nat -C tetherctrl_nat_POSTROUTING -o "$STARLINK_IF" -j MASQUERADE 2>/dev/null; do
+    iptables -t nat -D tetherctrl_nat_POSTROUTING -o "$STARLINK_IF" -j MASQUERADE 2>/dev/null || break
   done
-
-  while iptables -C tetherctrl_FORWARD -i "$WLAN_IF" -o "$HOTSPOT_IF" -m state --state RELATED,ESTABLISHED -g tetherctrl_counters 2>/dev/null; do
-    iptables -D tetherctrl_FORWARD -i "$WLAN_IF" -o "$HOTSPOT_IF" -m state --state RELATED,ESTABLISHED -g tetherctrl_counters 2>/dev/null || break
+  while iptables -C tetherctrl_FORWARD -i "$STARLINK_IF" -o "$HOTSPOT_IF" -m state --state RELATED,ESTABLISHED -g tetherctrl_counters 2>/dev/null; do
+    iptables -D tetherctrl_FORWARD -i "$STARLINK_IF" -o "$HOTSPOT_IF" -m state --state RELATED,ESTABLISHED -g tetherctrl_counters 2>/dev/null || break
   done
-
-  while iptables -C tetherctrl_FORWARD -i "$HOTSPOT_IF" -o "$WLAN_IF" -m state --state INVALID -j DROP 2>/dev/null; do
-    iptables -D tetherctrl_FORWARD -i "$HOTSPOT_IF" -o "$WLAN_IF" -m state --state INVALID -j DROP 2>/dev/null || break
+  while iptables -C tetherctrl_FORWARD -i "$HOTSPOT_IF" -o "$STARLINK_IF" -m state --state INVALID -j DROP 2>/dev/null; do
+    iptables -D tetherctrl_FORWARD -i "$HOTSPOT_IF" -o "$STARLINK_IF" -m state --state INVALID -j DROP 2>/dev/null || break
   done
-
-  while iptables -C tetherctrl_FORWARD -i "$HOTSPOT_IF" -o "$WLAN_IF" -g tetherctrl_counters 2>/dev/null; do
-    iptables -D tetherctrl_FORWARD -i "$HOTSPOT_IF" -o "$WLAN_IF" -g tetherctrl_counters 2>/dev/null || break
+  while iptables -C tetherctrl_FORWARD -i "$HOTSPOT_IF" -o "$STARLINK_IF" -g tetherctrl_counters 2>/dev/null; do
+    iptables -D tetherctrl_FORWARD -i "$HOTSPOT_IF" -o "$STARLINK_IF" -g tetherctrl_counters 2>/dev/null || break
   done
-
-  while iptables -C tetherctrl_counters -i "$HOTSPOT_IF" -o "$WLAN_IF" -j RETURN 2>/dev/null; do
-    iptables -D tetherctrl_counters -i "$HOTSPOT_IF" -o "$WLAN_IF" -j RETURN 2>/dev/null || break
+  while iptables -C tetherctrl_counters -i "$HOTSPOT_IF" -o "$STARLINK_IF" -j RETURN 2>/dev/null; do
+    iptables -D tetherctrl_counters -i "$HOTSPOT_IF" -o "$STARLINK_IF" -j RETURN 2>/dev/null || break
   done
-
-  while iptables -C tetherctrl_counters -i "$WLAN_IF" -o "$HOTSPOT_IF" -j RETURN 2>/dev/null; do
-    iptables -D tetherctrl_counters -i "$WLAN_IF" -o "$HOTSPOT_IF" -j RETURN 2>/dev/null || break
+  while iptables -C tetherctrl_counters -i "$STARLINK_IF" -o "$HOTSPOT_IF" -j RETURN 2>/dev/null; do
+    iptables -D tetherctrl_counters -i "$STARLINK_IF" -o "$HOTSPOT_IF" -j RETURN 2>/dev/null || break
   done
 }
 
+# ---- Starlink reachability probe ----
+
 starlink_has_ping() {
   ip link show "$HOTSPOT_IF" >/dev/null 2>&1 || return 1
-  ip link show "$WLAN_IF" >/dev/null 2>&1 || return 1
-  ip route show table "$WLAN_TABLE" | grep -q "^default" || return 1
+  ip link show "$STARLINK_IF" >/dev/null 2>&1 || return 1
+  ip route show table "$STARLINK_TABLE" | grep -q "^default" || return 1
 
   for host in $CHECK_HOSTS; do
-    ping -I "$WLAN_IF" -c 1 -W 2 "$host" >/dev/null 2>&1 && return 0
+    ping -I "$STARLINK_IF" -c 1 -W 2 "$host" >/dev/null 2>&1 && return 0
   done
 
   return 1
 }
 
-route_to_starlink() {
+# ---- apply / teardown a whole mode ----
+
+apply_starlink() {
   echo 1 > /proc/sys/net/ipv4/ip_forward
+  cleanup_duplicate_rules
   ensure_rule_once
-  ensure_iptables || return 1
-  ip route flush cache
-  return 0
+  ensure_iptables_self
+  if ! ensure_iptables_tetherctrl; then
+    log WARN "tetherctrl chains unavailable; relying on self-managed NAT/forward (4G not required)"
+  fi
 }
 
-route_to_4g() {
+# Keep Starlink rules healthy between transitions WITHOUT flushing the route cache
+# (flushing resets live connections). Every call here is an idempotent no-op when present.
+keepalive_starlink() {
+  ensure_rule_once
+  ensure_iptables_self
+  ensure_iptables_tetherctrl >/dev/null 2>&1
+}
+
+apply_4g() {
   cleanup_duplicate_rules
-  ip route flush cache
+  teardown_iptables_self
+  teardown_iptables_tetherctrl
+}
+
+dump_diag() {
+  log DIAG "===== diag begin ($1) ====="
+  ip rule 2>&1 | logblock "iprule"
+  ip route show table "$STARLINK_TABLE" 2>&1 | logblock "sltable"
+  ip route show 2>&1 | logblock "main"
+  iptables -t nat -S POSTROUTING 2>&1 | logblock "natPOST"
+  iptables -t nat -S tetherctrl_nat_POSTROUTING 2>&1 | logblock "natTC"
+  iptables -S FORWARD 2>&1 | logblock "fwd"
+  iptables -S tetherctrl_FORWARD 2>&1 | logblock "fwdTC"
+  for h in $CHECK_HOSTS; do
+    if ping -I "$STARLINK_IF" -c 1 -W 2 "$h" >/dev/null 2>&1; then
+      log DIAG "ping| $h via $STARLINK_IF OK"
+    else
+      log DIAG "ping| $h via $STARLINK_IF FAIL"
+    fi
+  done
+  log DIAG "===== diag end ====="
 }
 
 do_stop() {
@@ -177,7 +250,8 @@ do_stop() {
   # does not show script args, so a ps-based sweep can't find the setsid'd daemon).
   kill_old_hotrouters
   cleanup_duplicate_rules
-  teardown_iptables
+  teardown_iptables_self
+  teardown_iptables_tetherctrl
   ip route flush cache
   write_state "OFF"
   log INFO "Service stopped + teardown done"
@@ -206,56 +280,69 @@ trap 'rm -f "$PIDFILE"; write_state "OFF"; log INFO "Service stopped"; exit 0' I
 
 echo 1 > /proc/sys/net/ipv4/ip_forward
 
-last_mode="initial"
-tick=0
-
 log INFO "Service force-started"
-log INFO "Old hotrouter processes killed"
-log INFO "Hotspot=$HOTSPOT_IF | Starlink=$WLAN_IF | Table=$WLAN_TABLE | Ping=$CHECK_HOSTS"
+log INFO "Hotspot=$HOTSPOT_IF | Starlink=$STARLINK_IF | Table=$STARLINK_TABLE | Ping=$CHECK_HOSTS"
+log INFO "Hysteresis up=$UP_THRESHOLD down=$DOWN_THRESHOLD interval=${INTERVAL_SEC}s"
+
+# Clean baseline: start on 4G, no diversion. Hysteresis governs switches from here.
+apply_4g
+current="4g"
+write_state "4G"
+log INFO "Baseline mode=4G (clean)"
+dump_diag "startup"
+
+ok=0
+fail=0
+tick=0
 
 while true; do
   trim_log
 
   if starlink_has_ping; then
-    if route_to_starlink; then
-      mode="starlink"
-    else
-      # Could not apply the WLAN route (e.g. tetherctrl chains missing). Clean up
-      # any half-applied diversion rule so the hotspot genuinely falls back to 4G,
-      # keeping the reported "4G" state honest instead of leaving traffic broken.
-      route_to_4g
-      mode="broken"
-      log ERROR "Starlink has ping, but route_to_starlink failed; fell back to 4G"
-    fi
+    ok=$((ok + 1))
+    fail=0
   else
-    route_to_4g
-    mode="4g"
+    fail=$((fail + 1))
+    ok=0
   fi
 
-  case "$mode" in
-    starlink) write_state "WLAN" ;;
-    *)        write_state "4G" ;;
-  esac
+  want="$current"
+  if [ "$current" != "starlink" ] && [ "$ok" -ge "$UP_THRESHOLD" ]; then
+    want="starlink"
+  fi
+  if [ "$current" = "starlink" ] && [ "$fail" -ge "$DOWN_THRESHOLD" ]; then
+    want="4g"
+  fi
 
-  if [ "$mode" != "$last_mode" ]; then
-    case "$mode" in
-      starlink)
-        log INFO "Route transition: $last_mode -> STARLINK. Hotspot forced through $WLAN_IF."
-        ;;
-      4g)
-        log WARN "Route transition: $last_mode -> 4G. Starlink ping unavailable."
-        ;;
-      broken)
-        log ERROR "Route transition: $last_mode -> BROKEN. Starlink ping OK but firewall/routing failed."
-        ;;
-    esac
-    last_mode="$mode"
+  if [ "$want" != "$current" ]; then
+    if [ "$want" = "starlink" ]; then
+      log INFO "Transition 4G -> STARLINK (ok_streak=$ok). Hotspot diverted through $STARLINK_IF."
+      apply_starlink
+      current="starlink"
+      ip route flush cache
+      write_state "STARLINK"
+      dump_diag "to-starlink"
+    else
+      log WARN "Transition STARLINK -> 4G (fail_streak=$fail). Starlink ping lost."
+      apply_4g
+      current="4g"
+      ip route flush cache
+      write_state "4G"
+      dump_diag "to-4g"
+    fi
+  else
+    # Steady state: keep rules healthy, no cache flush, no route churn.
+    if [ "$current" = "starlink" ]; then
+      keepalive_starlink
+      write_state "STARLINK"
+    else
+      write_state "4G"
+    fi
   fi
 
   tick=$((tick + 1))
-
   if [ "$tick" -ge "$HEARTBEAT_EVERY" ]; then
-    log INFO "Heartbeat: current_mode=$mode"
+    log INFO "Heartbeat: mode=$current ok=$ok fail=$fail"
     tick=0
   fi
 
