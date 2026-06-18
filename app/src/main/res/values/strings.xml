@@ -13,7 +13,7 @@
     <string name="hint_wait">aguarde…</string>
     <string name="hint_reinstall">reinstale pelo exploit</string>
 
-    <string name="route_wlan">Trafegando via WLAN (Starlink)</string>
+    <string name="route_starlink">Trafegando via Starlink</string>
     <string name="route_4g">Trafegando via 4G</string>
     <string name="route_none">—</string>
 

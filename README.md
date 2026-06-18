@@ -1,9 +1,9 @@
 # HotRouter
 
 Tiny, single-purpose Android app for **my own Haval head unit**. It does exactly one
-thing: run the **HotRouter** daemon that bridges the car's Wi-Fi hotspot out through an
-external WLAN (e.g. Starlink on `wlan0`) when reachable, and falls back to the OEM 4G
-route otherwise.
+thing: run the **HotRouter** daemon that bridges the car's Wi-Fi hotspot out through the
+external Starlink uplink (`wlan0`) when reachable, and falls back to the OEM 4G route
+otherwise.
 
 Extracted from the old `haval-app-tool-multimidia` project — only the HotRouter feature
 survives. No Frida runtime, no cluster projection, no vehicle control, no Shizuku.
@@ -15,7 +15,7 @@ Not on any store. Installed only on my car, signed with my own key.
 One screen:
 
 - A **big button** that says LIGADO / DESLIGADO — tap to toggle.
-- A **chip** below it: `Trafegando via WLAN (Starlink)` or `Trafegando via 4G`.
+- A **chip** below it: `Trafegando via Starlink` or `Trafegando via 4G`.
 - A **Ver logs** button.
 
 It auto-starts on boot and restores the last on/off state — no need to open the app.

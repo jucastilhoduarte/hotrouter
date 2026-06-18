@@ -11,7 +11,7 @@
     <color name="starting_amber">#D97706</color>
     <color name="error_red">#DC2626</color>
 
-    <color name="chip_wlan">#15803D</color>
+    <color name="chip_starlink">#15803D</color>
     <color name="chip_4g">#1D4ED8</color>
     <color name="chip_idle">#1E293B</color>
 

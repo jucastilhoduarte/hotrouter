@@ -13,7 +13,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * The one screen: a big on/off button, a route chip (WLAN/4G), and a logs button.
+ * The one screen: a big on/off button, a route chip (Starlink/4G), and a logs button.
  * Status is polled every {@link #POLL_MS} ms; the blocking telnet read happens on a
  * worker thread and the result is rendered back on the main thread.
  */
@@ -91,9 +91,9 @@ public final class MainActivity extends Activity {
 
     private void render(HotRouter.Status s) {
         switch (s.mode) {
-            case HotRouter.WLAN:
+            case HotRouter.STARLINK:
                 paint(R.color.on_green, R.string.state_on, R.string.hint_tap_to_off);
-                chip(R.color.chip_wlan, "●  " + getString(R.string.route_wlan));
+                chip(R.color.chip_starlink, "●  " + getString(R.string.route_starlink));
                 break;
             case HotRouter.FOURG:
                 paint(R.color.on_green, R.string.state_on, R.string.hint_tap_to_off);
