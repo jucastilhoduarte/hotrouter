@@ -120,26 +120,29 @@ echo "== Scenario 4: fallback to 4G purges everything =="
 apply_4g
 asserteq "zero residue after 4G"    "$(total)"          0
 
-echo "== Scenario 5: WITH tetherctrl chains present =="
+echo "== Scenario 5: tetherctrl chains exist, but Starlink path must NOT touch them =="
 TC_EXISTS=1
 apply_starlink 2>/dev/null
-asserteq "self + 6 tetherctrl = 4+6"  "$(total)"        10
+asserteq "still only 4 self rules"     "$(total)"  4
+asserteq "zero tetherctrl rules added" "$(grep -c tetherctrl "$STORE")" 0
 i=0; while [ $i -lt 30 ]; do keepalive_starlink 2>/dev/null; i=$((i+1)); done
-asserteq "no accumulation w/ tetherctrl" "$(total)"     10
-purge_footprint
-asserteq "purge clears tetherctrl too"   "$(total)"     0
+asserteq "still 4 after 30 keepalives" "$(total)"  4
+apply_4g
+asserteq "4G purges to zero"           "$(total)"  0
 
-echo "== Scenario 6: crash recovery — ghosts from a dead run, then startup baseline =="
-TC_EXISTS=1
+echo "== Scenario 6: update from old release — purge legacy tetherctrl ghosts + dups =="
+: > "$STORE"; : > "$IPSTORE"
 apply_starlink 2>/dev/null
-# simulate a SIGKILL: inject extra duplicate ghosts as if a prior crashed run left them
+# legacy rules a <= v1.0.6 daemon could have left in the system chains, plus crash dups
+echo "nat|tetherctrl_nat_POSTROUTING|-o wlan0 -j MASQUERADE" >> "$STORE"
+echo "filter|tetherctrl_FORWARD|-i wlan2 -o wlan0 -g tetherctrl_counters" >> "$STORE"
+echo "filter|tetherctrl_counters|-i wlan2 -o wlan0 -j RETURN" >> "$STORE"
 echo "$SELF_NAT" >> "$STORE"
-echo "$SELF_FWD1" >> "$STORE"
 echo "rule|from all iif wlan2 lookup wlan0 priority 17999" >> "$IPSTORE"
 echo "rule|from all iif wlan2 lookup wlan0 priority 17999" >> "$IPSTORE"
-[ "$(total)" -gt 10 ] && ok "ghosts present before baseline ($(total))" || bad "ghost setup" "got $(total)"
-apply_4g    # this is what startup baseline runs
-asserteq "baseline purges ALL ghosts+dups" "$(total)"  0
+[ "$(total)" -gt 4 ] && ok "legacy ghosts present before baseline ($(total))" || bad "ghost setup" "got $(total)"
+apply_4g    # what the startup baseline runs
+asserteq "baseline purges legacy tetherctrl + dups to zero" "$(total)"  0
 
 echo "== Scenario 7: do_stop-style purge from a clean starlink state =="
 TC_EXISTS=0

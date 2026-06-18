@@ -146,10 +146,14 @@ reset live connections (CarPlay).
 
 Fixes in `hotrouter.sh`:
 
-1. **Self-sufficient NAT/forward** (`ensure_iptables_self`): installs `POSTROUTING -o
-   wlan0 MASQUERADE` and `FORWARD wlan2↔wlan0 ACCEPT` directly, independent of
-   `tetherctrl_*`. These are additive ACCEPT/MASQUERADE only (never DROP), so they cannot
-   regress the working case. tetherctrl integration is now best-effort.
+1. **Self-managed NAT/forward** (`ensure_iptables_self`): installs `POSTROUTING -o wlan0
+   MASQUERADE` and `FORWARD wlan2↔wlan0 ACCEPT` directly. These are additive
+   ACCEPT/MASQUERADE only (never DROP), so they cannot regress the working case. The
+   Starlink path **does not touch the system `tetherctrl_*` chains at all** — the whole
+   router is `ip_forward` + one `ip rule` diversion + these three iptables rules. The 4G
+   fallback still rides on the system's own tetherctrl NAT (always present when cellular is
+   up); `purge_footprint` also strips any legacy tetherctrl rule left by an older release
+   (≤ v1.0.6).
 2. **Hysteresis**: switch to Starlink only after `UP_THRESHOLD` (2) consecutive good
    samples, fall back only after `DOWN_THRESHOLD` (4) consecutive failures. Routing is
    re-applied (and the cache flushed) **only on a real transition**; steady state just

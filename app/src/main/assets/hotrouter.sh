@@ -9,11 +9,12 @@
 # - Fall back to the OEM 4G route (vlan13) when Starlink is unavailable.
 #
 # Design notes (see docs/DESIGN.md):
-# - The Starlink path is SELF-SUFFICIENT: it installs its own FORWARD/MASQUERADE rules
-#   and does NOT depend on the system tetherctrl_* chains existing. Earlier versions rode
-#   on tetherctrl_*, which Android only populates while a cellular upstream is alive — so
-#   Starlink silently broke whenever 4G dropped to zero. The tetherctrl rules are now a
-#   best-effort bonus, not a requirement.
+# - The Starlink path is fully self-managed: ip_forward + one `ip rule` diversion + our own
+#   FORWARD/MASQUERADE rules. It does NOT touch the system tetherctrl_* chains at all.
+#   Earlier versions rode on tetherctrl_*, which Android only populates while a cellular
+#   upstream is alive — so Starlink silently broke whenever 4G dropped to zero. The 4G
+#   fallback still uses the system's own tetherctrl NAT (always present when cellular is up);
+#   we just stopped depending on it for the Starlink path.
 # - Switching is debounced (hysteresis) and routing is only re-applied on an actual
 #   transition, so brief Starlink ping blips no longer flap the route and reset live
 #   connections (which used to kill CarPlay mid-drive).
@@ -129,42 +130,12 @@ teardown_iptables_self() {
   done
 }
 
-# ---- best-effort integration with the system tetherctrl chains (bonus, not required) ----
-
-chain_exists() {
-  iptables -nL "$1" >/dev/null 2>&1
-}
-
-nat_chain_exists() {
-  iptables -t nat -nL "$1" >/dev/null 2>&1
-}
-
-ensure_iptables_tetherctrl() {
-  nat_chain_exists tetherctrl_nat_POSTROUTING || return 1
-  chain_exists tetherctrl_FORWARD || return 1
-  chain_exists tetherctrl_counters || return 1
-
-  iptables -t nat -C tetherctrl_nat_POSTROUTING -o "$STARLINK_IF" -j MASQUERADE 2>/dev/null || \
-  iptables -t nat -I tetherctrl_nat_POSTROUTING 1 -o "$STARLINK_IF" -j MASQUERADE
-
-  iptables -C tetherctrl_FORWARD -i "$STARLINK_IF" -o "$HOTSPOT_IF" -m state --state RELATED,ESTABLISHED -g tetherctrl_counters 2>/dev/null || \
-  iptables -I tetherctrl_FORWARD 1 -i "$STARLINK_IF" -o "$HOTSPOT_IF" -m state --state RELATED,ESTABLISHED -g tetherctrl_counters
-
-  iptables -C tetherctrl_FORWARD -i "$HOTSPOT_IF" -o "$STARLINK_IF" -m state --state INVALID -j DROP 2>/dev/null || \
-  iptables -I tetherctrl_FORWARD 2 -i "$HOTSPOT_IF" -o "$STARLINK_IF" -m state --state INVALID -j DROP
-
-  iptables -C tetherctrl_FORWARD -i "$HOTSPOT_IF" -o "$STARLINK_IF" -g tetherctrl_counters 2>/dev/null || \
-  iptables -I tetherctrl_FORWARD 3 -i "$HOTSPOT_IF" -o "$STARLINK_IF" -g tetherctrl_counters
-
-  iptables -C tetherctrl_counters -i "$HOTSPOT_IF" -o "$STARLINK_IF" -j RETURN 2>/dev/null || \
-  iptables -I tetherctrl_counters 1 -i "$HOTSPOT_IF" -o "$STARLINK_IF" -j RETURN
-
-  iptables -C tetherctrl_counters -i "$STARLINK_IF" -o "$HOTSPOT_IF" -j RETURN 2>/dev/null || \
-  iptables -I tetherctrl_counters 2 -i "$STARLINK_IF" -o "$HOTSPOT_IF" -j RETURN
-
-  return 0
-}
-
+# ---- legacy cleanup: tetherctrl additions left by older releases ----
+#
+# The Starlink path no longer writes into the system tetherctrl_* chains. But a daemon from
+# an older release (<= v1.0.6) may have, and a SIGKILL'd one could not tear them down. This
+# teardown stays in purge_footprint so an update wipes any such legacy rule from a system
+# chain on the next launch. It writes nothing — only removes our old signature if present.
 teardown_iptables_tetherctrl() {
   while iptables -t nat -C tetherctrl_nat_POSTROUTING -o "$STARLINK_IF" -j MASQUERADE 2>/dev/null; do
     iptables -t nat -D tetherctrl_nat_POSTROUTING -o "$STARLINK_IF" -j MASQUERADE 2>/dev/null || break
@@ -207,9 +178,6 @@ apply_starlink() {
   cleanup_duplicate_rules
   ensure_rule_once
   ensure_iptables_self
-  if ! ensure_iptables_tetherctrl; then
-    log WARN "tetherctrl chains unavailable; relying on self-managed NAT/forward (4G not required)"
-  fi
 }
 
 # Keep Starlink rules healthy between transitions WITHOUT flushing the route cache
@@ -217,15 +185,14 @@ apply_starlink() {
 keepalive_starlink() {
   ensure_rule_once
   ensure_iptables_self
-  ensure_iptables_tetherctrl >/dev/null 2>&1
 }
 
 # Remove every rule this daemon could ever have added — the diversion ip rule, the
-# self-managed NAT/forward, and the tetherctrl additions. Each teardown is a
-# `while -C ... ; do -D` loop, so duplicates from a previously crashed run are all
-# removed, not just one. This is the single source of truth for "our footprint", used by
-# the 4G path, stop, the signal trap, and the startup baseline — so no exit path can leave
-# a ghost rule behind that would black-hole hotspot traffic.
+# self-managed NAT/forward, and any legacy tetherctrl additions from older releases. Each
+# teardown is a `while -C ... ; do -D` loop, so duplicates from a previously crashed run
+# are all removed, not just one. This is the single source of truth for "our footprint",
+# used by the 4G path, stop, the signal trap, and the startup baseline — so no exit path
+# can leave a ghost rule behind that would black-hole hotspot traffic.
 purge_footprint() {
   cleanup_duplicate_rules
   teardown_iptables_self
