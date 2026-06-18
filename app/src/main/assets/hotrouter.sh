@@ -220,10 +220,20 @@ keepalive_starlink() {
   ensure_iptables_tetherctrl >/dev/null 2>&1
 }
 
-apply_4g() {
+# Remove every rule this daemon could ever have added — the diversion ip rule, the
+# self-managed NAT/forward, and the tetherctrl additions. Each teardown is a
+# `while -C ... ; do -D` loop, so duplicates from a previously crashed run are all
+# removed, not just one. This is the single source of truth for "our footprint", used by
+# the 4G path, stop, the signal trap, and the startup baseline — so no exit path can leave
+# a ghost rule behind that would black-hole hotspot traffic.
+purge_footprint() {
   cleanup_duplicate_rules
   teardown_iptables_self
   teardown_iptables_tetherctrl
+}
+
+apply_4g() {
+  purge_footprint
 }
 
 dump_diag() {
@@ -249,9 +259,7 @@ do_stop() {
   # kill_old_hotrouters kills the daemon via pidfile + /proc cmdline scan (toybox ps
   # does not show script args, so a ps-based sweep can't find the setsid'd daemon).
   kill_old_hotrouters
-  cleanup_duplicate_rules
-  teardown_iptables_self
-  teardown_iptables_tetherctrl
+  purge_footprint
   ip route flush cache
   write_state "OFF"
   log INFO "Service stopped + teardown done"
@@ -276,7 +284,12 @@ kill_old_hotrouters
 
 echo $$ > "$PIDFILE"
 
-trap 'rm -f "$PIDFILE"; write_state "OFF"; log INFO "Service stopped"; exit 0' INT TERM EXIT
+# On a graceful kill (TERM/INT), purge every rule we added before leaving, so we never
+# strand a diversion that black-holes the hotspot. (A SIGKILL can't be trapped — that case
+# is covered by the startup baseline purge in the next launch.) The bare EXIT trap is a
+# last-resort pidfile cleanup for any other exit.
+trap 'purge_footprint; ip route flush cache; rm -f "$PIDFILE"; write_state "OFF"; log INFO "Service stopped (footprint purged)"; exit 0' INT TERM
+trap 'rm -f "$PIDFILE"' EXIT
 
 echo 1 > /proc/sys/net/ipv4/ip_forward
 

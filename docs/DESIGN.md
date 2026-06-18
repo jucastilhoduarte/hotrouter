@@ -158,7 +158,23 @@ Fixes in `hotrouter.sh`:
    main route tables, NAT/`FORWARD`/`tetherctrl_FORWARD` chains, and per-host ping to the
    log — so an open-road failure can be diagnosed after the fact.
 
-Note: this routing rework is **not bench-testable** (needs the live car network). The
+### No ghost rules
+
+A stale diversion or NAT rule left behind by a crashed run could black-hole the hotspot.
+Guarantees:
+
+- **Idempotent adds** — every `ensure_*` is `-C` guarded, so nothing accumulates across
+  the 5s loop or repeated transitions.
+- **One purge, every exit path** — `purge_footprint` (diversion rule + self NAT/forward +
+  tetherctrl additions) runs on 4G fallback, `stop`, the TERM/INT trap, **and** the
+  startup baseline. So even after an untrappable SIGKILL, the next launch resets to a
+  clean slate before doing anything. In-kernel rules also vanish on reboot.
+- **Proven, not asserted** — `scripts/test/rule_lifecycle_test.sh` drives the real
+  functions against a mock `iptables`/`ip` through apply → keepalive×N → fallback →
+  injected-ghost crash recovery → stop, and checks zero residue + no accumulation. Runs
+  in CI on every PR and release.
+
+Note: the routing rework is **not bench-testable** (needs the live car network). The
 self-managed rules are low-risk by construction; the diagnostics exist to confirm the
 root cause on the next drive.
 

@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  # PRs only verify that the app compiles. No secrets, no release.
+  # PRs verify the app compiles and the daemon's rule lifecycle + telnet parser tests pass.
   pr-build:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -24,13 +24,27 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
+      - name: Daemon syntax check
+        run: sh -n app/src/main/assets/hotrouter.sh
+
+      - name: Rule lifecycle tests (no ghost rules)
+        run: sh scripts/test/rule_lifecycle_test.sh app/src/main/assets/hotrouter.sh
+
+      - name: Telnet parser tests
+        run: |
+          mkdir -p /tmp/tout
+          javac -d /tmp/tout \
+            app/src/main/java/com/castilhoduarte/hotrouter/TelnetRoot.java \
+            scripts/test/TelnetRootTest.java
+          java -cp /tmp/tout com.castilhoduarte.hotrouter.TelnetRootTest
+
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       - name: Compile (debug)
         run: ./gradlew assembleDebug --stacktrace
 
-  # Merges to main produce a signed release APK.
+  # Merges to main run the same tests, then produce a signed release APK.
   release:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -45,6 +59,20 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
           cache: gradle
+
+      - name: Daemon syntax check
+        run: sh -n app/src/main/assets/hotrouter.sh
+
+      - name: Rule lifecycle tests (no ghost rules)
+        run: sh scripts/test/rule_lifecycle_test.sh app/src/main/assets/hotrouter.sh
+
+      - name: Telnet parser tests
+        run: |
+          mkdir -p /tmp/tout
+          javac -d /tmp/tout \
+            app/src/main/java/com/castilhoduarte/hotrouter/TelnetRoot.java \
+            scripts/test/TelnetRootTest.java
+          java -cp /tmp/tout com.castilhoduarte.hotrouter.TelnetRootTest
 
       - name: Decode keystore
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore
