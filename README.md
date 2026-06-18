@@ -1,54 +1,49 @@
 # HotRouter
 
-Tiny, single-purpose Android app for **my own Haval head unit**. It does exactly one
-thing: run the **HotRouter** daemon that bridges the car's Wi-Fi hotspot out through the
-external Starlink uplink (`wlan0`) when reachable, and falls back to the OEM 4G route
-otherwise.
-
-Extracted from the old `haval-app-tool-multimidia` project — only the HotRouter feature
-survives. No Frida runtime, no cluster projection, no vehicle control, no Shizuku.
+Single-purpose Android app for **my own Haval head unit**. Runs the **HotRouter** daemon:
+bridges the car's Wi-Fi hotspot traffic out through the external Starlink uplink (`wlan0`)
+when reachable, falls back to OEM 4G (`vlan13`) otherwise.
 
 Not on any store. Installed only on my car, signed with my own key.
 
-## What it looks like
+## UI
 
-One screen:
+![mockup](docs/ui-mockup.svg)
 
-- A **big button** that says LIGADO / DESLIGADO — tap to toggle.
-- A **chip** below it: `Trafegando via Starlink` or `Trafegando via 4G`.
-- A **Ver logs** button.
+One screen (21:9 landscape):
+- Big **LIGADO / DESLIGADO** toggle button
+- Chip: `Trafegando via Starlink` or `Trafegando via 4G`
+- **Ver logs** button
 
-It auto-starts on boot and restores the last on/off state — no need to open the app.
+Auto-starts on boot, restores last on/off state — no need to open the app.
 
 ## How it works
 
-- **Zero dependencies.** Android SDK only. Java. No AndroidX, no Compose, no Shizuku, no
-  telnet library.
-- Privileged work (the daemon, `ip rule`, `iptables`) runs through the head unit's root
-  telnet shell on `127.0.0.1:23`, reached by a ~100-line raw-socket client
+- **Zero dependencies** — Android SDK only. Java. No AndroidX, no Compose, no Shizuku, no telnet library.
+- Root work (`ip rule`, `iptables`, daemon) runs through the head unit's telnet shell on
+  `127.0.0.1:23`, reached by a ~100-line raw-socket client
   ([`TelnetRoot.java`](app/src/main/java/com/castilhoduarte/hotrouter/TelnetRoot.java)).
-- The shell is only reachable if the app's uid ≤ 10999, which is why it must be installed
-  through the Frida exploit window — see [`scripts/install.sh`](scripts/install.sh).
-- The daemon itself is [`hotrouter.sh`](app/src/main/assets/hotrouter.sh), pushed to
-  `/data/local/tmp` and supervised by a 60s watchdog.
+- Shell reachable only if app uid ≤ 10999 — requires install through Frida exploit window
+  (see [`scripts/install.sh`](scripts/install.sh)).
+- Daemon: [`hotrouter.sh`](app/src/main/assets/hotrouter.sh) — pushed to `/data/local/tmp`,
+  supervised by a 60s watchdog. Self-managed NAT/forwarding, independent of system
+  `tetherctrl_*` chains. Hysteresis prevents flapping.
 
-See [`docs/DESIGN.md`](docs/DESIGN.md) for the full design.
+Full design: [`docs/DESIGN.md`](docs/DESIGN.md).
 
 ## Build / release
 
-- **Pull request → `assembleDebug`** (compile check only, no secrets).
-- **Merge to `main` → signed `assembleRelease`**, published as a GitHub release with the
-  APK attached.
+- **Pull request → `assembleDebug`** (compile check, no secrets).
+- **Merge to `main` → signed `assembleRelease`** → published as GitHub release with APK.
 
-Signing secrets live in repo Actions secrets: `KEYSTORE_BASE64`, `STORE_PASSWORD`,
-`KEY_PASSWORD`, `KEY_ALIAS`. The keystore is never committed.
+Signing secrets in Actions: `KEYSTORE_BASE64`, `STORE_PASSWORD`, `KEY_PASSWORD`, `KEY_ALIAS`.
 
 ## Install on the car
 
-Via telnet (`telnet 192.168.x.x 23`) ou direto no shell da multimídia, de qualquer pasta:
+Via telnet ou shell da multimídia, de qualquer pasta:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/jucastilhoduarte/haval-hotrouter/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/jucastilhoduarte/hotrouter/main/scripts/install.sh | sh
 ```
 
-Isso baixa e executa o install.sh, que já puxa os binários do Frida e o APK do último release automaticamente.
+Baixa os binários do Frida do release `exploit-bins` e o APK do último release automaticamente.

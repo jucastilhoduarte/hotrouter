@@ -7,10 +7,6 @@ thing: run the **HotRouter** daemon that bridges the car's Wi-Fi hotspot traffic
 through the external Starlink uplink (`wlan0`) when reachable, falling back to the OEM 4G
 route (`vlan13`) otherwise.
 
-Extracted from the old `haval-app-tool-multimidia` project, keeping **only** the
-HotRouter feature. Everything else (Frida hooks, cluster projection, vehicle AIDL,
-window/AC automations, Compose UI, Shizuku) is discarded.
-
 Not published anywhere. Installed only on my car, signed with my own key.
 
 ## Hard constraints
@@ -121,8 +117,7 @@ Adapted from the old installer:
 - Keeps the Frida exploit phases (so the app installs with uid ≤ 10999 → telnet:23
   reachable).
 - **Drops the Shizuku install phase** (Shizuku no longer used).
-- Uninstalls the old `br.com.redesurftank.havalshisuku` and installs the new
-  `com.castilhoduarte.hotrouter`.
+- Installs `com.castilhoduarte.hotrouter` idempotently.
 
 ## Decisions
 

@@ -11,7 +11,7 @@
 # Design notes (see docs/DESIGN.md):
 # - The Starlink path is fully self-managed: ip_forward + one `ip rule` diversion + our own
 #   FORWARD/MASQUERADE rules. It does NOT touch the system tetherctrl_* chains at all.
-#   (The original multimidia app rode on tetherctrl_*, which Android only populates while a
+#   (Legacy approach rode on tetherctrl_*, which Android only populates while a
 #   cellular upstream is alive — so Starlink broke whenever 4G dropped to zero.) The 4G
 #   fallback still uses the system's own tetherctrl NAT, present whenever cellular is up.
 # - Switching is debounced (hysteresis) and routing is only re-applied on an actual

@@ -17,7 +17,7 @@
 set -u
 
 PKG="com.castilhoduarte.hotrouter"
-REPO="https://github.com/jucastilhoduarte/haval-hotrouter"
+REPO="https://github.com/jucastilhoduarte/hotrouter"
 WORK="/data/local/tmp"
 ROLLBACK_ENABLED=true
 
