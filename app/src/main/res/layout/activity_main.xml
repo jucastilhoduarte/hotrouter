@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="24dp">
+
+    <!-- Header: wifi logo + name -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ImageView
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:src="@drawable/ic_wifi"
+            android:contentDescription="@string/app_name" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:text="@string/app_name"
+            android:textColor="@color/text_primary"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.02" />
+    </LinearLayout>
+
+    <!-- Big toggle button -->
+    <LinearLayout
+        android:id="@+id/big_button"
+        android:layout_width="300dp"
+        android:layout_height="190dp"
+        android:layout_marginTop="36dp"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:background="@drawable/bg_button"
+        android:clickable="true"
+        android:focusable="true">
+
+        <TextView
+            android:id="@+id/state_text"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/state_off"
+            android:textColor="@color/white"
+            android:textSize="36sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08" />
+
+        <TextView
+            android:id="@+id/state_sub"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/hint_tap_to_on"
+            android:textColor="#CCFFFFFF"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <!-- Route chip -->
+    <TextView
+        android:id="@+id/route_chip"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="26dp"
+        android:background="@drawable/bg_chip"
+        android:paddingStart="18dp"
+        android:paddingEnd="18dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp"
+        android:text="@string/route_none"
+        android:textColor="@color/text_primary"
+        android:textSize="15sp" />
+
+    <!-- Logs button -->
+    <TextView
+        android:id="@+id/logs_button"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="28dp"
+        android:background="@drawable/bg_logs_button"
+        android:paddingStart="28dp"
+        android:paddingEnd="28dp"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp"
+        android:text="@string/logs"
+        android:textColor="@color/text_secondary"
+        android:textSize="15sp"
+        android:clickable="true"
+        android:focusable="true" />
+</LinearLayout>

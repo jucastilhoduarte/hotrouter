@@ -1,0 +1,84 @@
+name: Build
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  # PRs only verify that the app compiles. No secrets, no release.
+  pr-build:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Compile (debug)
+        run: ./gradlew assembleDebug --stacktrace
+
+  # Merges to main produce a signed release APK.
+  release:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Decode keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore
+
+      - name: Compute version
+        id: ver
+        run: |
+          VC="${GITHUB_RUN_NUMBER}"
+          VN="1.0.${GITHUB_RUN_NUMBER}"
+          echo "code=$VC" >> "$GITHUB_OUTPUT"
+          echo "name=$VN" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp version into build.gradle.kts
+        run: |
+          sed -i "s/versionName = \".*\"/versionName = \"${{ steps.ver.outputs.name }}\"/" app/build.gradle.kts
+          sed -i "s/versionCode = [0-9]*/versionCode = ${{ steps.ver.outputs.code }}/" app/build.gradle.kts
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build signed release
+        env:
+          SIGNING_STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Create release + upload APK
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.ver.outputs.name }}"
+          gh release create "$TAG" \
+            --title "HotRouter ${{ steps.ver.outputs.name }}" \
+            --notes "Automated release"
+          gh release upload "$TAG" \
+            app/build/outputs/apk/release/app-release.apk
