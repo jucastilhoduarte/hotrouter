@@ -1,4 +1,4 @@
-package com.castilhoduarte.starhouter;
+package com.castilhoduarte.starlinkrouter;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;

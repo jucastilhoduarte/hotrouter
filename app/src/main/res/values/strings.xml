@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">StarHouter</string>
+    <string name="app_name">Starlink Router</string>
 
     <string name="state_on">LIGADO</string>
     <string name="state_off">DESLIGADO</string>
@@ -19,7 +19,7 @@
 
     <string name="logs">Logs</string>
     <string name="settings">Configurações</string>
-    <string name="logs_title">Logs do StarHouter</string>
+    <string name="logs_title">Logs do Starlink Router</string>
     <string name="refresh">Atualizar</string>
     <string name="close">Fechar</string>
 </resources>

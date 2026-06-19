@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# install.sh - instala (idempotente) o StarHouter a partir de um APK.
+# install.sh - instala (idempotente) o Starlink Router a partir de um APK.
 #
 # Uso:
 #   sh install.sh [url-do-apk]
@@ -16,8 +16,8 @@
 
 set -u
 
-PKG="com.castilhoduarte.starhouter"
-REPO="https://github.com/jucastilhoduarte/starhouter"
+PKG="com.castilhoduarte.starlinkrouter"
+REPO="https://github.com/jucastilhoduarte/starlinkrouter"
 WORK="/data/local/tmp"
 ROLLBACK_ENABLED=true
 
@@ -30,7 +30,7 @@ cleanup() {
     [ "$ROLLBACK_ENABLED" = false ] && exit 0
     log "INFO" "Rollback..."
     rm -rf "$WORK/unz" 2>/dev/null || true
-    rm -f "$WORK/artifact.bin" "$WORK/starhouter_new.apk" 2>/dev/null || true
+    rm -f "$WORK/artifact.bin" "$WORK/starlinkrouter_new.apk" 2>/dev/null || true
     log "INFO" "Rollback concluido"
 }
 trap cleanup EXIT
@@ -104,7 +104,7 @@ main() {
     # --- Fase 4: baixar e resolver o APK alvo ---
     log "INFO" "Fase 4: Baixar APK alvo"
     rm -rf unz 2>/dev/null || true
-    rm -f artifact.bin starhouter_new.apk 2>/dev/null || true
+    rm -f artifact.bin starlinkrouter_new.apk 2>/dev/null || true
     download "$URL" "artifact.bin" "artifact/apk"
 
     APK=""
@@ -117,28 +117,28 @@ main() {
         [ -n "$APK" ] || die "Nenhum .apk dentro do zip"
     else
         log "INFO" "Download tratado como .apk direto"
-        mv -f artifact.bin starhouter_new.apk || die "Falha ao preparar apk"
-        APK="$WORK/starhouter_new.apk"
+        mv -f artifact.bin starlinkrouter_new.apk || die "Falha ao preparar apk"
+        APK="$WORK/starlinkrouter_new.apk"
     fi
     [ -s "$APK" ] || die "APK final vazio"
 
-    # --- Fase 5: instalar StarHouter ---
+    # --- Fase 5: instalar Starlink Router ---
     # uninstall do proprio obrigatorio antes de reinstalar: assinatura propria difere de
     # uma versao anterior, entao pm install -r por cima falharia (UPDATE_INCOMPATIBLE).
     log "INFO" "Fase 5: Instalar $PKG"
     if app_installed "$PKG"; then
-        log "INFO" "Desinstalando versao atual do StarHouter"
+        log "INFO" "Desinstalando versao atual do Starlink Router"
         pm uninstall "$PKG" >/dev/null 2>&1 || log "WARN" "uninstall falhou (seguindo)"
     fi
-    pm install "$APK" || die "Falha na instalacao do StarHouter"
+    pm install "$APK" || die "Falha na instalacao do Starlink Router"
 
     # --- limpeza ---
     rm -rf unz 2>/dev/null || true
-    rm -f artifact.bin starhouter_new.apk 2>/dev/null || true
+    rm -f artifact.bin starlinkrouter_new.apk 2>/dev/null || true
     ROLLBACK_ENABLED=false
 
     log "INFO" "Instalado: $(pm path "$PKG" 2>/dev/null)"
-    echo "🎉 StarHouter instalado! Abra uma vez para ligar; depois ele sobe sozinho no boot."
+    echo "🎉 Starlink Router instalado! Abra uma vez para ligar; depois ele sobe sozinho no boot."
 }
 
 main "$@"

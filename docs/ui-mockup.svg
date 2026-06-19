@@ -59,5 +59,5 @@
   <text x="422" y="315" font-family="system-ui,sans-serif" font-size="11" fill="#94a3b8" letter-spacing="0.5">Configurações</text>
 
   <!-- Ratio label -->
-  <text x="828" y="352" text-anchor="end" font-family="system-ui,sans-serif" font-size="9" fill="#2a2a3a" letter-spacing="1">21:9 · StarHouter v1</text>
+  <text x="828" y="352" text-anchor="end" font-family="system-ui,sans-serif" font-size="9" fill="#2a2a3a" letter-spacing="1">21:9 · Starlink Router v1</text>
 </svg>

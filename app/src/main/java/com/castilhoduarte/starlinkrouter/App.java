@@ -1,4 +1,4 @@
-package com.castilhoduarte.starhouter;
+package com.castilhoduarte.starlinkrouter;
 
 import android.app.Application;
 import android.content.Context;
@@ -13,7 +13,7 @@ import android.content.SharedPreferences;
  */
 public final class App extends Application {
 
-    static final String PREFS = "starhouter_prefs";
+    static final String PREFS = "starlinkrouter_prefs";
 
     private static App instance;
     private Context deviceProtected;

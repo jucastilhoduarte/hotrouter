@@ -1,4 +1,4 @@
-package com.castilhoduarte.starhouter;
+package com.castilhoduarte.starlinkrouter;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;

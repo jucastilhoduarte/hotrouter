@@ -1,4 +1,4 @@
-package com.castilhoduarte.starhouter;
+package com.castilhoduarte.starlinkrouter;
 
 import android.content.SharedPreferences;
 import android.os.Handler;
@@ -12,22 +12,22 @@ import java.io.IOException;
 import java.io.InputStream;
 
 /**
- * Gerencia o ciclo de vida do daemon StarHouter. Todo trabalho privilegiado passa por {@link TelnetRoot}
+ * Gerencia o ciclo de vida do daemon StarlinkRouter. Todo trabalho privilegiado passa por {@link TelnetRoot}
  * (shell root em 127.0.0.1:23). Singleton; mutações ocorrem em uma única thread de background para
  * que o boot-start e o toggle da UI não entrem em corrida.
  */
-public final class StarHouter {
+public final class StarlinkRouter {
 
-    private static final String TAG = "StarHouter";
+    private static final String TAG = "StarlinkRouter";
 
     static final String BASE = "/data/local/tmp";
-    static final String SCRIPT = BASE + "/starhouter.sh";
-    static final String PIDFILE = BASE + "/starhouter.pid";
-    static final String STATEFILE = BASE + "/starhouter.state";
-    static final String LOGFILE = BASE + "/starhouter.log";
-    static final String ASSET = "starhouter.sh";
+    static final String SCRIPT = BASE + "/starlinkrouter.sh";
+    static final String PIDFILE = BASE + "/starlinkrouter.pid";
+    static final String STATEFILE = BASE + "/starlinkrouter.state";
+    static final String LOGFILE = BASE + "/starlinkrouter.log";
+    static final String ASSET = "starlinkrouter.sh";
 
-    static final String KEY_ENABLED = "enableStarHouter";
+    static final String KEY_ENABLED = "enableStarlinkRouter";
 
     // Modos de status visíveis pela UI.
     public static final String OFF = "OFF";
@@ -56,13 +56,13 @@ public final class StarHouter {
         }
     }
 
-    private static volatile StarHouter instance;
+    private static volatile StarlinkRouter instance;
 
-    public static StarHouter get() {
+    public static StarlinkRouter get() {
         if (instance == null) {
-            synchronized (StarHouter.class) {
+            synchronized (StarlinkRouter.class) {
                 if (instance == null) {
-                    instance = new StarHouter();
+                    instance = new StarlinkRouter();
                 }
             }
         }
@@ -73,8 +73,8 @@ public final class StarHouter {
     private volatile boolean watchdogRunning = false;
     private volatile long enableTimeMs = 0L;
 
-    private StarHouter() {
-        HandlerThread t = new HandlerThread("StarHouterThread");
+    private StarlinkRouter() {
+        HandlerThread t = new HandlerThread("StarlinkRouterThread");
         t.start();
         bg = new Handler(t.getLooper());
     }
@@ -129,7 +129,7 @@ public final class StarHouter {
     private void pushScript() {
         String b64 = readAssetBase64();
         if (b64.isEmpty()) {
-            Log.e(TAG, "empty starhouter.sh asset");
+            Log.e(TAG, "empty starlinkrouter.sh asset");
             return;
         }
         String b64file = SCRIPT + ".b64";
@@ -150,7 +150,7 @@ public final class StarHouter {
 
     private void startDaemon() {
         // setsid + detach para que o daemon sobreviva ao encerramento da sessão telnet.
-        run("setsid sh " + SCRIPT + " start >" + BASE + "/starhouter.out 2>&1 < /dev/null &");
+        run("setsid sh " + SCRIPT + " start >" + BASE + "/starlinkrouter.out 2>&1 < /dev/null &");
         Log.w(TAG, "daemon start requested");
     }
 

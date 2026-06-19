@@ -1,4 +1,4 @@
-package com.castilhoduarte.starhouter;
+package com.castilhoduarte.starlinkrouter;
 
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
@@ -72,10 +72,10 @@ public final class MainActivity extends Activity {
     }
 
     private void toggle() {
-        boolean target = !StarHouter.get().isEnabled();
-        StarHouter.get().setEnabled(target);
+        boolean target = !StarlinkRouter.get().isEnabled();
+        StarlinkRouter.get().setEnabled(target);
         // Feedback imediato otimista; o loop de polling irá reconciliar.
-        render(new StarHouter.Status(target ? StarHouter.STARTING : StarHouter.OFF, 0L));
+        render(new StarlinkRouter.Status(target ? StarlinkRouter.STARTING : StarlinkRouter.OFF, 0L));
     }
 
     @Override
@@ -102,7 +102,7 @@ public final class MainActivity extends Activity {
         @Override
         public void run() {
             io.execute(() -> {
-                StarHouter.Status s = StarHouter.get().readStatus();
+                StarlinkRouter.Status s = StarlinkRouter.get().readStatus();
                 main.post(() -> render(s));
             });
             if (polling) {
@@ -111,29 +111,29 @@ public final class MainActivity extends Activity {
         }
     };
 
-    private void render(StarHouter.Status s) {
+    private void render(StarlinkRouter.Status s) {
         switch (s.mode) {
-            case StarHouter.STARLINK:
+            case StarlinkRouter.STARLINK:
                 paint(R.color.on_green, R.string.state_on, R.string.hint_tap_to_off);
                 chip(R.color.chip_starlink, "●  " + getString(R.string.route_starlink));
                 break;
-            case StarHouter.FOURG:
+            case StarlinkRouter.FOURG:
                 paint(R.color.on_green, R.string.state_on, R.string.hint_tap_to_off);
                 chip(R.color.chip_4g, "●  " + getString(R.string.route_4g));
                 break;
-            case StarHouter.STARTING:
+            case StarlinkRouter.STARTING:
                 paint(R.color.starting_amber, R.string.state_starting, R.string.hint_wait);
                 chip(R.color.chip_idle, getString(R.string.route_none));
                 break;
-            case StarHouter.ERROR:
+            case StarlinkRouter.ERROR:
                 paint(R.color.error_red, R.string.state_error, R.string.hint_tap_to_off);
                 chip(R.color.chip_idle, getString(R.string.route_none));
                 break;
-            case StarHouter.NO_ROOT:
+            case StarlinkRouter.NO_ROOT:
                 paint(R.color.error_red, R.string.state_no_root, R.string.hint_reinstall);
                 chip(R.color.chip_idle, getString(R.string.route_none));
                 break;
-            case StarHouter.OFF:
+            case StarlinkRouter.OFF:
             default:
                 paint(R.color.off_gray, R.string.state_off, R.string.hint_tap_to_on);
                 chip(R.color.chip_idle, getString(R.string.route_none));

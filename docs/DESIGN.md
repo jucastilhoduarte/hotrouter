@@ -1,9 +1,9 @@
-# StarHouter — Design
+# Starlink Router — Design
 
 ## Objetivo
 
 Um app Android de propósito único e inofensivo para **minha própria central multimídia Haval**. Ele faz uma
-coisa só: executar o daemon **StarHouter** que encaminha o tráfego do hotspot Wi-Fi do carro para
+coisa só: executar o daemon **Starlink Router** que encaminha o tráfego do hotspot Wi-Fi do carro para
 fora pelo uplink externo Starlink (`wlan0`) quando disponível, caindo de volta para a rota
 4G OEM (`vlan13`) caso contrário.
 
@@ -25,7 +25,7 @@ acessá-lo **somente se seu uid ≤ 10999**, o que é concedido instalando o app
 injeção `system_server` do Frida (veja `scripts/install.sh`). Isso não mudou em relação ao app antigo.
 
 O app antigo usava telnet apenas para *inicializar o Shizuku*, e depois executava tudo via Shizuku.
-Para o StarHouter essa indireção é desnecessária: **telnet já é root**, e o daemon
+Para o Starlink Router essa indireção é desnecessária: **telnet já é root**, e o daemon
 não precisa de nada mais do que um shell root (`ip rule`, `iptables`, `/proc/sys`, escritas de arquivo em
 `/data/local/tmp`). Portanto, **abandonamos o Shizuku completamente** e falamos com telnet:23 diretamente via um
 cliente de socket raw de ~100 linhas. É isso que torna "sem dependências" viável.
@@ -38,13 +38,13 @@ exibe uma mensagem amigável "reinstale pelo exploit" em vez de travar.
 ```
 Boot ─▶ BootReceiver ─▶ BootService (foreground, directBootAware)
                               │  read persisted toggle (device-protected prefs)
-                              │  toggle ON? ──▶ telnet:23 ─▶ push starhouter.sh
-                              │                          ─▶ setsid sh starhouter.sh start
+                              │  toggle ON? ──▶ telnet:23 ─▶ push starlinkrouter.sh
+                              │                          ─▶ setsid sh starlinkrouter.sh start
                               └──────────────▶ arm 60s watchdog (relaunch if pid dead)
 
 MainActivity ─▶ poll status every 3s via telnet (state file + pid liveness)
             ─▶ big toggle button  /  route chip (Starlink·4G)  /  botões "Logs" + "Configurações"
-LogActivity  ─▶ tail starhouter.log via telnet
+LogActivity  ─▶ tail starlinkrouter.log via telnet
 ```
 
 ### Componentes
@@ -52,16 +52,16 @@ LogActivity  ─▶ tail starhouter.log via telnet
 | Arquivo | Responsabilidade |
 |---------|------------------|
 | `TelnetRoot.java` | `java.net.Socket` raw para `127.0.0.1:23`. Handshake IAC mínimo (recusa todos DO/WILL). `exec(cmd)` envia `cmd; echo __HR_END__$?` e lê até o sentinel, removendo IAC + ANSI. Retorna saída + código de saída. Sem biblioteca. |
-| `StarHouter.java` | Singleton em uma `HandlerThread` em background. `enableAndStart()`, `stop()`, `readStatus()` → `OFF/STARTING/STARLINK/4G/ERROR`, `readLog(n)`, `isDaemonAlive()`. Todo trabalho de shell via `TelnetRoot`. Persiste o toggle. Gerencia o watchdog. Espelha a lógica do antigo `StarHouterManager`. |
-| `starhouter.sh` | Daemon de roteamento autossuficiente (hysteresis + NAT autogerenciado, independente das chains tetherctrl do sistema; veja "Guardrails de roteamento" abaixo). Asset, enviado em base64 para `/data/local/tmp/starhouter.sh`. Escreve `starhouter.state` (`STARLINK`/`4G`/`OFF` + epoch), `starhouter.pid`, `starhouter.log`. |
+| `StarlinkRouter.java` | Singleton em uma `HandlerThread` em background. `enableAndStart()`, `stop()`, `readStatus()` → `OFF/STARTING/STARLINK/4G/ERROR`, `readLog(n)`, `isDaemonAlive()`. Todo trabalho de shell via `TelnetRoot`. Persiste o toggle. Gerencia o watchdog. Espelha a lógica do antigo `StarlinkRouterManager`. |
+| `starlinkrouter.sh` | Daemon de roteamento autossuficiente (hysteresis + NAT autogerenciado, independente das chains tetherctrl do sistema; veja "Guardrails de roteamento" abaixo). Asset, enviado em base64 para `/data/local/tmp/starlinkrouter.sh`. Escreve `starlinkrouter.state` (`STARLINK`/`4G`/`OFF` + epoch), `starlinkrouter.pid`, `starlinkrouter.log`. |
 | `BootService.java` | Serviço em foreground, `directBootAware`. Ao iniciar: se toggle ON, envia e inicia o daemon, arma o watchdog. Mantém uma notificação persistente discreta. |
 | `BootReceiver.java` | `BOOT_COMPLETED` + `LOCKED_BOOT_COMPLETED` + `MY_PACKAGE_REPLACED` → inicia `BootService`. |
 | `MainActivity.java` | A tela única. O toggle salva a preferência e chama o manager. Verifica o status a cada 3s. |
-| `LogActivity.java` | Visualização monospace rolável de `tail -n 400 starhouter.log`, com atualização. |
+| `LogActivity.java` | Visualização monospace rolável de `tail -n 400 starlinkrouter.log`, com atualização. |
 
 ### Persistência de estado
 
-Boolean `enableStarHouter` nas `SharedPreferences` com **proteção de dispositivo** (para que seja legível
+Boolean `enableStarlinkRouter` nas `SharedPreferences` com **proteção de dispositivo** (para que seja legível
 durante `LOCKED_BOOT_COMPLETED`, antes de o usuário desbloquear). Esse é o mecanismo de "lembrar estado
 anterior entre reboots": definir como ON antes do reboot → daemon inicia automaticamente no próximo boot.
 
@@ -70,7 +70,7 @@ anterior entre reboots": definir como ON antes do reboot → daemon inicia autom
 Uma tela em paisagem, escura, amigável, com card arredondado:
 
 ```
-        ((•)) StarHouter
+        ((•)) Starlink Router
 
    ┌───────────────────────┐
    │       L I G A D O      │   big button — tap toggles
@@ -107,7 +107,7 @@ Uma tela em paisagem, escura, amigável, com card arredondado:
 - Toda lógica de branch `preview` / prerelease removida.
 - Keystore decodificado do secret `KEYSTORE_BASE64` no momento do build; nunca commitado.
 
-Secrets configurados em `jucastilhoduarte/starhouter`: `KEYSTORE_BASE64`, `STORE_PASSWORD`,
+Secrets configurados em `jucastilhoduarte/starlinkrouter`: `KEYSTORE_BASE64`, `STORE_PASSWORD`,
 `KEY_PASSWORD`, `KEY_ALIAS`.
 
 ## Instalação (`scripts/install.sh`)
@@ -116,15 +116,15 @@ Adaptado do instalador antigo:
 - Mantém as fases do exploit Frida (para que o app seja instalado com uid ≤ 10999 → telnet:23
   acessível).
 - **Remove a fase de instalação do Shizuku** (Shizuku não é mais usado).
-- Instala `com.castilhoduarte.starhouter` de forma idempotente.
+- Instala `com.castilhoduarte.starlinkrouter` de forma idempotente.
 
 ## Decisões
 
 - Remover o antigo `iptables -I INPUT/OUTPUT ACCEPT` — ele servia à conectividade do app grande,
-  não ao StarHouter. O roteamento do hotspot usa `tetherctrl_*` / `FORWARD`, que o script
+  não ao Starlink Router. O roteamento do hotspot usa `tetherctrl_*` / `FORWARD`, que o script
   gerencia por conta própria.
 - Builds de PR em **debug** (sem secrets necessários); release assinado somente no merge para `main`.
-- `applicationId = com.castilhoduarte.starhouter`, nome de exibição **StarHouter**.
+- `applicationId = com.castilhoduarte.starlinkrouter`, nome de exibição **Starlink Router**.
 
 ## Guardrails de roteamento (daemon)
 
@@ -138,7 +138,7 @@ popula enquanto o hotspot tem um **uplink celular**. Sem celular → essas chain
 O `ip route flush cache` de 5s + comutação por amostra única também fazia a rota flutuar e
 resetava conexões ativas (CarPlay).
 
-Correções em `starhouter.sh`:
+Correções em `starlinkrouter.sh`:
 
 1. **NAT/forward autogerenciado** (`ensure_iptables_self`): instala `POSTROUTING -o wlan0
    MASQUERADE` e `FORWARD wlan2↔wlan0 ACCEPT` diretamente. São apenas regras aditivas
@@ -176,5 +176,5 @@ causa raiz no próximo percurso.
 
 ## Fora do escopo
 
-Tudo que não for StarHouter. Sem controle do veículo, sem cluster, sem runtime Frida, sem
+Tudo que não for Starlink Router. Sem controle do veículo, sem cluster, sem runtime Frida, sem
 multi-usuário, sem configurações além do toggle único.
