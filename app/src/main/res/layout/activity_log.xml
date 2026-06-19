@@ -3,7 +3,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="20dp">
+    android:padding="40dp">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -17,7 +17,7 @@
             android:layout_weight="1"
             android:text="@string/logs_title"
             android:textColor="@color/text_primary"
-            android:textSize="20sp"
+            android:textSize="40sp"
             android:textStyle="bold" />
 
         <TextView
@@ -25,13 +25,13 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:background="@drawable/bg_logs_button"
-            android:paddingStart="20dp"
-            android:paddingEnd="20dp"
-            android:paddingTop="10dp"
-            android:paddingBottom="10dp"
+            android:paddingStart="40dp"
+            android:paddingEnd="40dp"
+            android:paddingTop="20dp"
+            android:paddingBottom="20dp"
             android:text="@string/refresh"
             android:textColor="@color/text_secondary"
-            android:textSize="14sp"
+            android:textSize="28sp"
             android:clickable="true"
             android:focusable="true" />
 
@@ -39,15 +39,15 @@
             android:id="@+id/close_button"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginStart="12dp"
+            android:layout_marginStart="24dp"
             android:background="@drawable/bg_logs_button"
-            android:paddingStart="20dp"
-            android:paddingEnd="20dp"
-            android:paddingTop="10dp"
-            android:paddingBottom="10dp"
+            android:paddingStart="40dp"
+            android:paddingEnd="40dp"
+            android:paddingTop="20dp"
+            android:paddingBottom="20dp"
             android:text="@string/close"
             android:textColor="@color/text_secondary"
-            android:textSize="14sp"
+            android:textSize="28sp"
             android:clickable="true"
             android:focusable="true" />
     </LinearLayout>
@@ -56,7 +56,7 @@
         android:id="@+id/log_scroll"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_marginTop="16dp">
+        android:layout_marginTop="32dp">
 
         <TextView
             android:id="@+id/log_text"
@@ -64,7 +64,7 @@
             android:layout_height="wrap_content"
             android:fontFamily="monospace"
             android:textColor="@color/text_secondary"
-            android:textSize="12sp"
+            android:textSize="28sp"
             android:textIsSelectable="true"
             android:text="" />
     </ScrollView>
