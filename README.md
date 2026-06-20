@@ -12,9 +12,6 @@ Via telnet na head unit (`telnet <ip-da-multimidia> 23`):
 # Instalar o JLH6 (baixa o último release automaticamente)
 curl -fsSL https://raw.githubusercontent.com/jucastilhoduarte/jlh6/main/scripts/install-app.sh | sh
 
-# Instalar o JLH6 a partir de uma URL específica
-curl -fsSL https://raw.githubusercontent.com/jucastilhoduarte/jlh6/main/scripts/install-app.sh | sh -s <url-do-apk>
-
 # Instalar qualquer APK
 curl -fsSL https://raw.githubusercontent.com/jucastilhoduarte/jlh6/main/scripts/install-apk.sh | sh -s <url-do-apk>
 ```

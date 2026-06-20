@@ -1,12 +1,9 @@
 #!/bin/sh
 
-# install-app.sh - instala (idempotente) o JLH6 a partir de um APK.
+# install-app.sh - instala (idempotente) o JLH6 a partir do ultimo release.
 #
 # Uso:
-#   sh install-app.sh [url-do-apk]
-#
-# Sem argumento: baixa o .apk do ultimo release do REPO abaixo.
-# Com argumento: usa a URL direta de um .apk publico.
+#   sh install-app.sh
 #
 # Por que o exploit Frida e necessario: a multimidia bloqueia pm install
 # de APKs externos. A injecao no system_server remove essa restricao.
@@ -56,13 +53,10 @@ app_installed() { pm path "$1" >/dev/null 2>&1; }
 main() {
     cd "$WORK" || die "Falha ao acessar $WORK"
 
-    URL="${1:-}"
-    if [ -z "$URL" ]; then
-        log "INFO" "Sem URL; resolvendo ultimo release de $REPO"
-        URL=$(get_release_apk "$REPO")
-        [ -n "$URL" ] || die "Nao achei .apk no ultimo release"
-        log "INFO" "APK do release: $URL"
-    fi
+    log "INFO" "Resolvendo ultimo release de $REPO"
+    URL=$(get_release_apk "$REPO")
+    [ -n "$URL" ] || die "Nao achei .apk no ultimo release"
+    log "INFO" "APK do release: $URL"
 
     # --- Fase 1: binarios do exploit (cacheados) ---
     log "INFO" "Fase 1: Downloads do exploit"
