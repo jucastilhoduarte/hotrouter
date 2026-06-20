@@ -16,3 +16,4 @@ release.keystore
 
 # Exploit binaries live in the exploit-bins GitHub release, not in git
 /bin/
+docs/superpowers/
