@@ -5,8 +5,7 @@
 # Uso:
 #   sh install-apk.sh <url-do-apk>
 #
-# A URL e obrigatoria. Aceita .apk direto ou .zip contendo .apk.
-# GH_TOKEN (opcional, via env): Bearer no download (URLs privadas/artifacts).
+# A URL e obrigatoria. Deve apontar diretamente para um .apk publico.
 #
 # Por que o exploit e necessario: a multimidia bloqueia pm install de APKs
 # externos. A injecao Frida no system_server remove essa restricao durante
@@ -26,20 +25,14 @@ cleanup() {
     [ "$rc" -eq 0 ] && exit 0
     [ "$ROLLBACK_ENABLED" = false ] && exit 0
     log "INFO" "Rollback..."
-    rm -rf "$WORK/unz" 2>/dev/null || true
-    rm -f "$WORK/artifact.bin" "$WORK/target.apk" 2>/dev/null || true
+    rm -f "$WORK/target.apk" 2>/dev/null || true
     log "INFO" "Rollback concluido"
 }
 trap cleanup EXIT
 
 download() {
     log "INFO" "Baixando $3..."
-    if [ -n "${GH_TOKEN:-}" ]; then
-        curl -L --fail --progress-bar -H "Authorization: Bearer $GH_TOKEN" -o "$2" "$1" \
-            || die "Falha no download de $3"
-    else
-        curl -L --fail --progress-bar -o "$2" "$1" || die "Falha no download de $3"
-    fi
+    curl -L --fail --progress-bar -o "$2" "$1" || die "Falha no download de $3"
     [ -s "$2" ] || die "$3 vazio/inexistente"
 }
 
@@ -50,7 +43,7 @@ download_cached() {
 
 main() {
     URL="${1:-}"
-    [ -n "$URL" ] || die "Uso: sh install-any.sh <url-do-apk>"
+    [ -n "$URL" ] || die "Uso: sh install-apk.sh <url-do-apk>"
 
     cd "$WORK" || die "Falha ao acessar $WORK"
 
@@ -81,33 +74,18 @@ main() {
     sleep 2
     log "INFO" "Injecao disparada (system_server pid=$SYSTEM_PID)"
 
-    # --- Fase 4: baixar e resolver o APK alvo ---
+    # --- Fase 4: baixar APK ---
     log "INFO" "Fase 4: Baixar APK ($URL)"
-    rm -rf unz 2>/dev/null || true
-    rm -f artifact.bin target.apk 2>/dev/null || true
-    download "$URL" "artifact.bin" "artifact"
-
-    APK=""
-    if command -v unzip >/dev/null 2>&1 && \
-       unzip -l artifact.bin 2>/dev/null | grep -qiE '\.apk *$'; then
-        log "INFO" "Zip detectado, extraindo .apk"
-        mkdir -p unz
-        unzip -o artifact.bin -d unz >/dev/null 2>&1 || die "Falha ao extrair o zip"
-        APK=$(find unz -type f -name '*.apk' | head -n1)
-        [ -n "$APK" ] || die "Nenhum .apk dentro do zip"
-    else
-        mv -f artifact.bin target.apk || die "Falha ao preparar apk"
-        APK="$WORK/target.apk"
-    fi
-    [ -s "$APK" ] || die "APK final vazio"
+    rm -f target.apk 2>/dev/null || true
+    download "$URL" "target.apk" "APK"
+    APK="$WORK/target.apk"
 
     # --- Fase 5: instalar ---
     log "INFO" "Fase 5: Instalando APK"
     pm install -r "$APK" || pm install "$APK" || die "Falha na instalacao"
 
     # --- limpeza ---
-    rm -rf unz 2>/dev/null || true
-    rm -f artifact.bin target.apk 2>/dev/null || true
+    rm -f target.apk 2>/dev/null || true
     ROLLBACK_ENABLED=false
 
     log "INFO" "APK instalado com sucesso"

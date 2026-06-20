@@ -6,9 +6,7 @@
 #   sh install-app.sh [url-do-apk]
 #
 # Sem argumento: baixa o .apk do ultimo release do REPO abaixo.
-# Com argumento: usa a URL dada. Aceita .apk direto ou zip (extrai o .apk de dentro).
-#
-# GH_TOKEN (opcional, via env): vai como Bearer no download (so para URL privada/artifact).
+# Com argumento: usa a URL direta de um .apk publico.
 #
 # Por que o exploit Frida e necessario: a multimidia bloqueia pm install
 # de APKs externos. A injecao no system_server remove essa restricao.
@@ -28,8 +26,7 @@ cleanup() {
     [ "$rc" -eq 0 ] && exit 0
     [ "$ROLLBACK_ENABLED" = false ] && exit 0
     log "INFO" "Rollback..."
-    rm -rf "$WORK/unz" 2>/dev/null || true
-    rm -f "$WORK/artifact.bin" "$WORK/jlh6_new.apk" 2>/dev/null || true
+    rm -f "$WORK/jlh6_new.apk" 2>/dev/null || true
     log "INFO" "Rollback concluido"
 }
 trap cleanup EXIT
@@ -44,12 +41,7 @@ get_release_apk() {
 # download <url> <out> <label>
 download() {
     log "INFO" "Baixando $3..."
-    if [ -n "${GH_TOKEN:-}" ]; then
-        curl -L --fail --progress-bar -H "Authorization: Bearer $GH_TOKEN" -o "$2" "$1" \
-            || die "Falha no download de $3"
-    else
-        curl -L --fail --progress-bar -o "$2" "$1" || die "Falha no download de $3"
-    fi
+    curl -L --fail --progress-bar -o "$2" "$1" || die "Falha no download de $3"
     [ -s "$2" ] || die "$3 vazio/inexistente"
 }
 
@@ -99,26 +91,11 @@ main() {
     sleep 2
     log "INFO" "Injecao disparada (system_server pid=$SYSTEM_PID)"
 
-    # --- Fase 4: baixar e resolver o APK alvo ---
+    # --- Fase 4: baixar APK ---
     log "INFO" "Fase 4: Baixar APK alvo"
-    rm -rf unz 2>/dev/null || true
-    rm -f artifact.bin jlh6_new.apk 2>/dev/null || true
-    download "$URL" "artifact.bin" "artifact/apk"
-
-    APK=""
-    if command -v unzip >/dev/null 2>&1 && \
-       unzip -l artifact.bin 2>/dev/null | grep -qiE '\.apk *$'; then
-        log "INFO" "Artifact zip detectado, extraindo .apk"
-        mkdir -p unz
-        unzip -o artifact.bin -d unz >/dev/null 2>&1 || die "Falha ao extrair o zip"
-        APK=$(find unz -type f -name '*.apk' | head -n1)
-        [ -n "$APK" ] || die "Nenhum .apk dentro do zip"
-    else
-        log "INFO" "Download tratado como .apk direto"
-        mv -f artifact.bin jlh6_new.apk || die "Falha ao preparar apk"
-        APK="$WORK/jlh6_new.apk"
-    fi
-    [ -s "$APK" ] || die "APK final vazio"
+    rm -f jlh6_new.apk 2>/dev/null || true
+    download "$URL" "jlh6_new.apk" "JLH6 APK"
+    APK="$WORK/jlh6_new.apk"
 
     # --- Fase 5: instalar JLH6 ---
     # uninstall do proprio obrigatorio antes de reinstalar: assinatura propria difere de
@@ -131,8 +108,7 @@ main() {
     pm install "$APK" || die "Falha na instalacao do JLH6"
 
     # --- limpeza ---
-    rm -rf unz 2>/dev/null || true
-    rm -f artifact.bin jlh6_new.apk 2>/dev/null || true
+    rm -f jlh6_new.apk 2>/dev/null || true
     ROLLBACK_ENABLED=false
 
     log "INFO" "Instalado: $(pm path "$PKG" 2>/dev/null)"
