@@ -7,7 +7,7 @@ import android.os.HandlerThread;
 
 public final class RouterManager {
 
-    public enum State { DISABLED, STARTING, ACTIVE }
+    public enum State { DISABLED, STARTING, ACTIVE, PURGING }
 
     private static final String PREFS_NAME = "router";
     private static final String KEY_ENABLED = "enabled";
@@ -57,8 +57,10 @@ public final class RouterManager {
     }
 
     public void disable(Context ctx) {
+        if (state == State.PURGING) return;
         pingRunning = false;
         bg.removeCallbacksAndMessages(null);
+        state = State.PURGING;
         prefs(ctx).edit().putBoolean(KEY_ENABLED, false).commit();
         bg.post(() -> {
             execPurge();

@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">JLH6</string>
-    <string name="open_settings">Abrir configurações do Android</string>
+    <string name="open_settings">Configurações</string>
     <string name="router_disabled">DESATIVADO</string>
-    <string name="router_starting">INICIANDO...</string>
+    <string name="router_starting">ATIVANDO...</string>
+    <string name="router_purging">DESATIVANDO...</string>
     <string name="router_active">ATIVADO</string>
 </resources>

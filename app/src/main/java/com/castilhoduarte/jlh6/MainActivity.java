@@ -8,6 +8,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
+import android.view.View;
 import android.widget.TextView;
 
 public final class MainActivity extends Activity {
@@ -16,7 +17,8 @@ public final class MainActivity extends Activity {
     private final Runnable pollState = new Runnable() {
         @Override public void run() {
             updateRouterButton();
-            if (RouterManager.get().getState() == RouterManager.State.STARTING) {
+            RouterManager.State s = RouterManager.get().getState();
+            if (s == RouterManager.State.STARTING || s == RouterManager.State.PURGING) {
                 mainHandler.postDelayed(this, 500);
             }
         }
@@ -37,8 +39,13 @@ public final class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         mainHandler.removeCallbacks(pollState);
+        RouterManager mgr = RouterManager.get();
+        if (mgr.getState() == RouterManager.State.DISABLED) {
+            mgr.restoreIfEnabled(this);
+        }
         updateRouterButton();
-        if (RouterManager.get().getState() == RouterManager.State.STARTING) {
+        RouterManager.State s = mgr.getState();
+        if (s == RouterManager.State.STARTING || s == RouterManager.State.PURGING) {
             mainHandler.post(pollState);
         }
     }
@@ -51,22 +58,38 @@ public final class MainActivity extends Activity {
 
     private void onRouterTap() {
         RouterManager mgr = RouterManager.get();
-        if (mgr.getState() == RouterManager.State.DISABLED) {
+        RouterManager.State s = mgr.getState();
+        if (s == RouterManager.State.PURGING) return;
+        if (s == RouterManager.State.DISABLED) {
             mgr.enable(this);
-            mainHandler.post(pollState);
         } else {
-            mainHandler.removeCallbacks(pollState);
             mgr.disable(this);
         }
+        mainHandler.removeCallbacks(pollState);
+        mainHandler.post(pollState);
         updateRouterButton();
     }
 
     private void updateRouterButton() {
         TextView tv = findViewById(R.id.router_status);
+        View btn = findViewById(R.id.router_button);
         switch (RouterManager.get().getState()) {
-            case STARTING: tv.setText(R.string.router_starting); break;
-            case ACTIVE:   tv.setText(R.string.router_active);   break;
-            default:       tv.setText(R.string.router_disabled); break;
+            case STARTING:
+                tv.setText(R.string.router_starting);
+                btn.setBackgroundResource(R.drawable.bg_button_busy);
+                break;
+            case ACTIVE:
+                tv.setText(R.string.router_active);
+                btn.setBackgroundResource(R.drawable.bg_button_active);
+                break;
+            case PURGING:
+                tv.setText(R.string.router_purging);
+                btn.setBackgroundResource(R.drawable.bg_button_busy);
+                break;
+            default:
+                tv.setText(R.string.router_disabled);
+                btn.setBackgroundResource(R.drawable.bg_button);
+                break;
         }
     }
 

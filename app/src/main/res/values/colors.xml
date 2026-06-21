@@ -6,4 +6,6 @@
     <color name="off_gray">#334155</color>
     <color name="icon_bg">#0EA5E9</color>
     <color name="white">#FFFFFF</color>
+    <color name="active_green">#2E7D32</color>
+    <color name="busy_orange">#E65100</color>
 </resources>
