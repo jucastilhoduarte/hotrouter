@@ -9,6 +9,8 @@ import android.os.Looper;
 
 public final class RouterService extends Service {
 
+    private final Handler handler = new Handler(Looper.getMainLooper());
+
     public static void start(Context ctx) {
         ctx.startService(new Intent(ctx, RouterService.class));
     }
@@ -22,15 +24,20 @@ public final class RouterService extends Service {
     }
 
     private void scheduleStop(RouterManager mgr, int startId) {
-        new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+        handler.postDelayed(new Runnable() {
             @Override public void run() {
                 if (mgr.getState() == RouterManager.State.STARTING) {
-                    new Handler(Looper.getMainLooper()).postDelayed(this, 1_000);
+                    handler.postDelayed(this, 1_000);
                 } else {
                     stopSelf(startId);
                 }
             }
         }, 1_000);
+    }
+
+    @Override
+    public void onDestroy() {
+        handler.removeCallbacksAndMessages(null);
     }
 
     @Override
