@@ -39,7 +39,7 @@ public final class RouterManager {
     private volatile boolean pingRunning = false;
     private volatile long pingStartMs = 0;
     private volatile boolean monitorRunning = false;
-    private int consecutiveFails = 0;
+    private volatile int consecutiveFails = 0;
 
     private RouterManager() {
         HandlerThread t = new HandlerThread("RouterManager");
@@ -76,6 +76,8 @@ public final class RouterManager {
     }
 
     public void disable(Context ctx) {
+        // Note: STARTING may be a recovery post-purge wait, not just first
+        // activation — both are cancellable here (we clear flags + nuke bg).
         if (state == State.PURGING) return;
         pingRunning = false;
         monitorRunning = false;
@@ -176,6 +178,9 @@ public final class RouterManager {
         state = State.STARTING;
         execPurge();
         bg.postDelayed(() -> {
+            // Manual disable / timeout during the post-purge wait persists
+            // KEY_ENABLED=false; honor it so recovery never overrides a user OFF.
+            if (!prefs(ctx).getBoolean(KEY_ENABLED, false)) return;
             pingRunning = false;
             startPingLoop(ctx);
         }, PING_INTERVAL_MS);
