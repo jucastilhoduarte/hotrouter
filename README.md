@@ -23,6 +23,12 @@ O roteamento só é aplicado após o primeiro `ping -I wlan0 8.8.8.8` bem-sucedi
 
 Estado persistido em SharedPreferences (`router/enabled`). Na inicialização do sistema (`BOOT_COMPLETED`), se estava ativo, reinicia o loop de ping.
 
+### Recuperação automática (switch)
+
+Modo opcional. Quando ligado, o app monitora a conectividade enquanto o roteamento está ATIVO (mesmo ping via `wlan0`, a cada 5s). Se 3 verificações seguidas falharem, ele executa a limpeza, espera 5s e religa o roteamento sozinho — sem intervenção — voltando ao fluxo normal de ativação (espera o ping validar antes de marcar ATIVADO de novo). Durante a recuperação o botão mostra "ATIVANDO...".
+
+Ações manuais sempre têm precedência: se você desligar o roteamento pelo botão, a recuperação automática é desativada junto (e o switch desmarca). Persistido em `router/auto_recovery`.
+
 ### Botão Configurações
 
 Abre `com.android.settings/.Settings`.

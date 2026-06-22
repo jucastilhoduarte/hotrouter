@@ -10,10 +10,11 @@
 
 ## O que é isso
 
-Aplicativo Android para a head unit pessoal de um carro Haval/GWM. Uma tela, dois botões:
+Aplicativo Android para a head unit pessoal de um carro Haval/GWM. Uma tela:
 
-1. **Starlink Router** — roteia tráfego do hotspot (`wlan2`) via Starlink (`wlan0`) usando iptables + ip rule via telnet root
-2. **Configurações** — abre `com.android.settings/.Settings`
+1. **Configurações** (botão, topo) — abre `com.android.settings/.Settings`
+2. **Starlink Router** (botão) — roteia tráfego do hotspot (`wlan2`) via Starlink (`wlan0`) usando iptables + ip rule via telnet root
+3. **Recuperação automática** (switch, abaixo do botão router) — quando ligado, monitora a conectividade enquanto ATIVO e religa o roteamento sozinho se a conexão cair
 
 ## Regras absolutas — nunca quebre estas
 
@@ -27,8 +28,8 @@ Aplicativo Android para a head unit pessoal de um carro Haval/GWM. Uma tela, doi
 
 | Caminho | O que é |
 |---------|---------|
-| `app/src/main/java/com/castilhoduarte/jlh6/MainActivity.java` | Única Activity. Poll de estado a cada 500ms. 1º tap em ativar checa accessibility; sem ele → dialog que abre `ACTION_ACCESSIBILITY_SETTINGS`. |
-| `app/src/main/java/com/castilhoduarte/jlh6/RouterManager.java` | Singleton. State machine: DISABLED/STARTING/ACTIVE/PURGING. HandlerThread para background. |
+| `app/src/main/java/com/castilhoduarte/jlh6/MainActivity.java` | Única Activity. Poll de estado a cada 500ms **enquanto estado ≠ DISABLED**. 1º tap em ativar checa accessibility; sem ele → dialog que abre `ACTION_ACCESSIBILITY_SETTINGS`. Switch de recuperação automática (persiste + arma/desarma o monitor via `setAutoRecovery`; `onResume` sincroniza o estado do switch sem disparar o listener). |
+| `app/src/main/java/com/castilhoduarte/jlh6/RouterManager.java` | Singleton. State machine: DISABLED/STARTING/ACTIVE/PURGING. HandlerThread para background. Inclui o monitor de saúde (recuperação automática) e a rotina de `recover`. |
 | `app/src/main/java/com/castilhoduarte/jlh6/TelnetRoot.java` | Cliente telnet mínimo para `127.0.0.1:23`. Sentinelas `__HR_BEG__`/`__HR_END__$?`. |
 | `app/src/main/java/com/castilhoduarte/jlh6/JLH6App.java` | Application. `onCreate` → `restoreIfEnabled`. Roda sempre que o processo nasce (inclusive religado no boot pelo accessibility). |
 | `app/src/main/java/com/castilhoduarte/jlh6/RouterAccessibilityService.java` | Âncora de autostart, habilitado **manualmente** pelo usuário na config do Android. `isEnabled()` checa o estado; `onServiceConnected` → `restoreIfEnabled`. |
@@ -50,16 +51,30 @@ Aplicativo Android para a head unit pessoal de um carro Haval/GWM. Uma tela, doi
 
 ```
 DISABLED → [tap] → STARTING → [ping wlan0 OK] → ACTIVE
-STARTING → [10min sem ping] → DISABLED (salva enabled=false)
+STARTING → [10min sem ping] → DISABLED (salva enabled=false, auto_recovery=false)
 STARTING → [tap] → PURGING → DISABLED
 ACTIVE   → [tap] → PURGING → DISABLED
+ACTIVE   → [recuperação auto: 3 pings falham] → STARTING (purge → espera 5s → reativa)
 ```
 
 - Ping loop: `ping -I wlan0 -c 1 -W 2 8.8.8.8` a cada 5s
 - Timeout STARTING: 10 minutos
-- Estado persistido: `SharedPreferences("router", "enabled")`
-- No boot: se `enabled=true`, sempre entra STARTING (nunca aplica regras sem ping)
+- Estado persistido: `SharedPreferences("router", "enabled")` e `SharedPreferences("router", "auto_recovery")`
+- No boot: se `enabled=true`, sempre entra STARTING (nunca aplica regras sem ping); o monitor rearma sozinho ao chegar em ACTIVE se `auto_recovery=true`
 - Tap durante PURGING: ignorado
+
+## Recuperação automática (auto-recovery)
+
+Modo opcional (switch na UI, persistido em `auto_recovery`). Só atua enquanto o router está intencionalmente ligado pelo usuário.
+
+- **Monitor de saúde** (`doMonitor`): armado só quando `state==ACTIVE` **e** `auto_recovery=true`. Faz o mesmo ping (`ping -I wlan0 ... 8.8.8.8`) a cada 5s e conta falhas consecutivas. Roda no mesmo `HandlerThread`, separado do loop de ativação (`doPing`).
+- **Gatilho**: 3 falhas consecutivas (`RECOVERY_FAIL_THRESHOLD`) → `recover()`.
+- **Recovery** (`recover`): `state=STARTING` → `execPurge()` (cleanup existente) → espera 5s → reativa via `startPingLoop` (revalida com ping, reaplica regras, volta a ACTIVE → rearma o monitor). Reusa STARTING ("ATIVANDO...") na UI — sem estado novo. Limite: cada reativação herda o timeout de 10min do `doPing`.
+- **Pontos de armado**: caminho de sucesso do `doPing` (cobre 1ª ativação, recovery e boot); e ao ligar o switch enquanto ACTIVE. Desligar o switch → `stopMonitor` (conexão segue ACTIVE).
+- **Precedência manual (override)**:
+  - `disable()` (tap manual no botão) limpa `auto_recovery=false`, para o monitor e cancela callbacks do `bg`. Próxima ativação exige remarcar o switch.
+  - O give-up do timeout de 10min também limpa `auto_recovery=false`.
+  - A lambda de reativação do `recover` rechecka `KEY_ENABLED` antes de religar — se o usuário desativou durante a espera pós-purge, recovery não sobrepõe o OFF manual.
 
 ## Autostart (religar no boot)
 
@@ -108,7 +123,7 @@ Secrets: `KEYSTORE_BASE64`, `STORE_PASSWORD`, `KEY_PASSWORD`, `KEY_ALIAS`.
 
 ## Design da UI
 
-Tema escuro, landscape, 21:9. Sem ActionBar. Dois botões retangulares empilhados verticalmente, centralizados. Ícone wifi + texto no botão router; ícone engrenagem + texto no botão configurações.
+Tema escuro, landscape, 21:9. Sem ActionBar. Empilhado verticalmente, centralizado, de cima para baixo: botão **Configurações** (engrenagem + texto), botão **Starlink Router** (wifi + texto), **switch** de recuperação automática. Botões retangulares.
 
 ## Pacote / assinatura
 
