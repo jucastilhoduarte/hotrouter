@@ -5,7 +5,6 @@ import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Intent;
-import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Handler;
@@ -175,6 +174,7 @@ public final class MainActivity extends Activity {
 
     private static void setClickableAlpha(View v, boolean on) {
         v.setClickable(on);
+        v.setEnabled(on);
         v.setAlpha(on ? 1f : 0.4f);
     }
 
